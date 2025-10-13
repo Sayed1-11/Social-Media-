@@ -2,33 +2,85 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import {
+  Alert,
+  Image,
+  Platform,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Switch,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
-import { useTheme } from '../context/ThemeContext';
-
 import { useThemeStyles } from '../../hooks/useThemeStyles';
-
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 export default function MenuScreen() {
+  const { logout } = useAuth();
   const router = useRouter();
   const { theme, toggleTheme, setTheme } = useTheme();
   const { colors, isDark } = useThemeStyles();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
 
+
+
+const handleLogout = async () => {
+  console.log('🔄 handleLogout function called');
+  
+  // Alternative 1: Simple immediate logout (remove confirmation)
+  // await logout();
+  // return;
+
+  // Alternative 2: Use a different alert approach
+  if (Platform.OS === 'web') {
+    // For web, use window.confirm
+    const confirmed = window.confirm('Are you sure you want to logout?');
+    if (confirmed) {
+      try {
+        console.log('✅ Logout confirmed, calling logout()...');
+        await logout();
+      } catch (error) {
+        console.error('Logout error:', error);
+        window.alert('Failed to logout. Please try again.');
+      }
+    } else {
+      console.log('❌ Logout cancelled');
+    }
+  } else {
+    // For mobile, try a different Alert approach
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        {
+          text: 'Cancel',
+          onPress: () => console.log('Cancel Pressed'),
+          style: 'cancel',
+        },
+        { 
+          text: 'Logout', 
+          onPress: async () => {
+            try {
+              console.log('✅ Logout confirmed, calling logout()...');
+              await logout();
+            } catch (error) {
+              console.error('Logout error:', error);
+              Alert.alert('Error', 'Failed to logout. Please try again.');
+            }
+          } 
+        },
+      ],
+      { cancelable: false }
+    );
+  }
+};
+
   const menuSections = [
     {
       title: 'Account',
       items: [
-        {
-          icon: 'person-outline',
-          title: 'Edit Profile',
-          onPress: () => console.log('Edit Profile'),
-        },
         {
           icon: 'lock-closed-outline',
           title: 'Privacy & Security',
@@ -93,17 +145,6 @@ export default function MenuScreen() {
         },
       ],
     },
-    {
-      title: 'Actions',
-      items: [
-        {
-          icon: 'log-out-outline',
-          title: 'Log Out',
-          color: colors.accent,
-          onPress: () => console.log('Log Out'),
-        },
-      ],
-    },
   ];
 
   const styles = createStyles(colors);
@@ -148,38 +189,51 @@ export default function MenuScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.appHeader}>
+        <Text style={styles.appTitle}>SmartConnect</Text>
+      </View>
+      
       <ScrollView 
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Ionicons name="person" size={40} color={colors.text} />
+        {/* Profile Section */}
+        <Pressable
+          style={styles.profileSection}
+          onPress={() => router.push('/profile')}
+        >
+          <View style={styles.profileContainer}>
+            <View style={styles.profileImageContainer}>
+              <Image 
+                source={{ uri: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face' }}
+                style={styles.profileImage}
+              />
+              <View style={styles.profileImageBadge}>
+                <Ionicons name="camera" size={12} color="#fff" />
+              </View>
             </View>
-            <View style={styles.avatarBadge}>
-              <Ionicons name="camera" size={12} color="#fff" />
+            
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileName}>Sheikh Sayed</Text>
+              <Text style={styles.profileHandle}>@sheikhsayed</Text>
+              
+              <View style={styles.profileStats}>
+                <View style={styles.profileStat}>
+                  <Text style={styles.profileStatNumber}>245</Text>
+                  <Text style={styles.profileStatLabel}>Posts</Text>
+                </View>
+                <View style={styles.profileStat}>
+                  <Text style={styles.profileStatNumber}>1.2K</Text>
+                  <Text style={styles.profileStatLabel}>Followers</Text>
+                </View>
+                <View style={styles.profileStat}>
+                  <Text style={styles.profileStatNumber}>456</Text>
+                  <Text style={styles.profileStatLabel}>Following</Text>
+                </View>
+              </View>
             </View>
           </View>
-          <Text style={styles.userName}>John Doe</Text>
-          <Text style={styles.userHandle}>@johndoe</Text>
-          
-          <View style={styles.statsContainer}>
-            <View style={styles.stat}>
-              <Text style={styles.statNumber}>245</Text>
-              <Text style={styles.statLabel}>Posts</Text>
-            </View>
-            <View style={styles.stat}>
-              <Text style={styles.statNumber}>1.2K</Text>
-              <Text style={styles.statLabel}>Followers</Text>
-            </View>
-            <View style={styles.stat}>
-              <Text style={styles.statNumber}>456</Text>
-              <Text style={styles.statLabel}>Following</Text>
-            </View>
-          </View>
-        </View>
+        </Pressable>
 
         {/* Menu Sections */}
         <View style={styles.menuSections}>
@@ -193,9 +247,21 @@ export default function MenuScreen() {
           ))}
         </View>
 
+        {/* Logout Section - Separate from menuSections */}
+        <View style={styles.logoutSection}>
+          <TouchableOpacity 
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="log-out-outline" size={22} color="#ff3b30" />
+            <Text style={styles.logoutText}>Log Out</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* App Version */}
         <View style={styles.versionContainer}>
-          <Text style={styles.versionText}>SocialApp v1.0.0 • {theme} mode</Text>
+          <Text style={styles.versionText}>SmartConnect v1.0.0 • {theme} mode</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -210,28 +276,50 @@ const createStyles = (colors: any) => StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  header: {
+  appHeader: {
+    paddingVertical: 15,
     alignItems: 'center',
-    paddingVertical: 32,
-    paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  avatarContainer: {
+  appTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.accent,
+  },
+  profileSection: {
+    backgroundColor: colors.surface,
+    margin: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 20,
+    shadowColor: colors.shadow,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  profileContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  profileImageContainer: {
     position: 'relative',
-    marginBottom: 16,
+    marginRight: 16,
   },
-  avatar: {
+  profileImage: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: colors.accent,
   },
-  avatarBadge: {
+  profileImageBadge: {
     position: 'absolute',
     bottom: 0,
     right: 0,
@@ -242,39 +330,63 @@ const createStyles = (colors: any) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: colors.background,
+    borderColor: colors.surface,
   },
-  userName: {
+  profileInfo: {
+    flex: 1,
+  },
+  profileName: {
     color: colors.text,
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 4,
   },
-  userHandle: {
+  profileHandle: {
     color: colors.textSecondary,
-    fontSize: 16,
-    marginBottom: 20,
+    fontSize: 14,
+    marginBottom: 12,
   },
-  statsContainer: {
+  profileStats: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
+    justifyContent: 'center',
+    marginTop: 8,
   },
-  stat: {
+  profileStat: {
     alignItems: 'center',
+    flex: 1,
   },
-  statNumber: {
+  profileStatNumber: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  statLabel: {
+  profileStatLabel: {
     color: colors.textSecondary,
     fontSize: 12,
   },
+  editProfileButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: 16,
+    alignSelf: 'center',
+  },
+  editProfileText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 6,
+  },
   menuSections: {
     padding: 16,
+    paddingTop: 0,
   },
   section: {
     marginBottom: 24,
@@ -325,6 +437,28 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     marginTop: 2,
+  },
+  // New Logout Section Styles
+  logoutSection: {
+    padding: 16,
+    paddingTop: 0,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.3)',
+  },
+  logoutText: {
+    color: '#ff3b30',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   versionContainer: {
     alignItems: 'center',

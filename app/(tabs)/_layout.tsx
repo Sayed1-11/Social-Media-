@@ -1,6 +1,6 @@
 import { useThemeStyles } from "@/hooks/useThemeStyles";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from 'expo-image-picker';
+import * as ImagePicker from "expo-image-picker";
 import { Tabs, useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
@@ -10,8 +10,8 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
-} from 'react-native';
+  View,
+} from "react-native";
 
 export default function TabLayout() {
   const { colors } = useThemeStyles();
@@ -33,22 +33,25 @@ export default function TabLayout() {
 
   const handleOpenCamera = async () => {
     try {
+      // Close menu first
+      toggleMenu();
+
       // First, check if we're on web
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         Alert.alert(
-          'Camera Not Available', 
-          'Camera access is limited on web. Please use the mobile app for full camera functionality.'
+          "Camera Not Available",
+          "Camera access is limited on web. Please use the mobile app for full camera functionality."
         );
         return;
       }
 
       // For mobile: Request camera permissions
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      
-      if (status !== 'granted') {
+
+      if (status !== "granted") {
         Alert.alert(
-          'Permission Required', 
-          'Sorry, we need camera permissions to take photos.'
+          "Permission Required",
+          "Sorry, we need camera permissions to take photos."
         );
         return;
       }
@@ -59,33 +62,43 @@ export default function TabLayout() {
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
-        cameraType: ImagePicker.CameraType.back, // Use back camera
+        cameraType: ImagePicker.CameraType.back,
       });
 
-      console.log('Camera result:', result);
+      console.log("Camera result:", result);
 
       if (!result.canceled && result.assets && result.assets[0]) {
-        console.log('Photo taken:', result.assets[0].uri);
+        console.log("Photo taken:", result.assets[0].uri);
         // Navigate to create-post with the captured image
         router.push({
           pathname: "/create-post",
-          params: { imageUri: result.assets[0].uri }
+          params: { 
+            imageUri: result.assets[0].uri,
+            fromCamera: "true" 
+          },
         });
       }
     } catch (error) {
-      console.error('Error opening camera:', error);
-      Alert.alert('Error', 'Failed to open camera. Please try again.');
+      console.error("Error opening camera:", error);
+      Alert.alert("Error", "Failed to open camera. Please try again.");
     }
   };
 
   // Alternative: Open image picker (gallery) instead of camera
   const handleOpenImagePicker = async () => {
     try {
+      // Close menu first
+      toggleMenu();
+
       // Request media library permissions
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (status !== 'granted') {
-        Alert.alert('Permission required', 'Sorry, we need gallery access to select photos.');
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission required",
+          "Sorry, we need gallery access to select photos."
+        );
         return;
       }
 
@@ -98,85 +111,98 @@ export default function TabLayout() {
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
-        console.log('Image selected:', result.assets[0].uri);
-        router.push({
-          pathname: "/create-post",
-          params: { imageUri: result.assets[0].uri }
-        });
+        console.log("Image selected:", result.assets[0].uri);
+        // Add a small delay to ensure menu is fully closed before navigation
+        setTimeout(() => {
+          router.push({
+            pathname: "/create-post",
+            params: { 
+              imageUri: result.assets[0].uri,
+              fromGallery: "true" 
+            },
+          });
+        }, 300);
       }
     } catch (error) {
-      console.error('Error opening image picker:', error);
-      Alert.alert('Error', 'Failed to open gallery.');
+      console.error("Error opening image picker:", error);
+      Alert.alert("Error", "Failed to open gallery.");
     }
   };
 
   // Updated handleAction to handle both camera and gallery
   const handleAction = (action: string) => {
-    toggleMenu();
-    
     switch (action) {
       case "post":
-        router.push("/create-post");
+        toggleMenu();
+        // Add delay for menu animation to complete
+        setTimeout(() => {
+          router.push("/create-post");
+        }, 300);
         break;
       case "photo":
         // On web, use image picker. On mobile, use camera.
-        if (Platform.OS === 'web') {
+        if (Platform.OS === "web") {
           handleOpenImagePicker();
         } else {
           handleOpenCamera();
         }
         break;
       case "location":
-        handleOpenLocation();
+        toggleMenu();
+        // Add delay for menu animation to complete
+        setTimeout(() => {
+          handleOpenLocation();
+        }, 300);
         break;
     }
   };
 
   const handleOpenLocation = async () => {
     if (!navigator.geolocation) {
-      Alert.alert('Error', 'Geolocation is not supported by your browser');
+      Alert.alert("Error", "Geolocation is not supported by your browser");
       return;
     }
 
-    Alert.alert('Getting Location', 'Please allow location access...');
+    Alert.alert("Getting Location", "Please allow location access...");
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
         router.push({
           pathname: "/map",
-          params: { 
+          params: {
             latitude: latitude.toString(),
-            longitude: longitude.toString()
-          }
+            longitude: longitude.toString(),
+          },
         });
       },
       (error) => {
-        let errorMessage = 'Unable to get your location';
-        
+        let errorMessage = "Unable to get your location";
+
         switch (error.code) {
           case error.PERMISSION_DENIED:
-            errorMessage = 'Location access was denied. Please allow location access in your browser settings.';
+            errorMessage =
+              "Location access was denied. Please allow location access in your browser settings.";
             break;
           case error.POSITION_UNAVAILABLE:
-            errorMessage = 'Location information is unavailable.';
+            errorMessage = "Location information is unavailable.";
             break;
           case error.TIMEOUT:
-            errorMessage = 'Location request timed out.';
+            errorMessage = "Location request timed out.";
             break;
         }
-        
-        Alert.alert('Location Error', errorMessage);
+
+        Alert.alert("Location Error", errorMessage);
       },
       {
         enableHighAccuracy: true,
         timeout: 15000,
-        maximumAge: 10000
+        maximumAge: 10000,
       }
     );
   };
 
-  // Your existing animation styles...
+  // Animation styles
   const postStyle = {
     transform: [
       { scale: animation },
@@ -281,24 +307,21 @@ export default function TabLayout() {
           }}
         />
 
-        {/* Empty slot for the center FAB position */}
+        {/* Hidden screens - these won't appear in tab bar but routing still works */}
         <Tabs.Screen
           name="create-post"
           options={{
-            title: "Create",
-            tabBarButton: () => null,
+            href: null,
           }}
         />
-        
-        {/* Add map screen route */}
+
         <Tabs.Screen
           name="map"
           options={{
-            title: "Map",
-            tabBarButton: () => null,
+            href: null,
           }}
         />
-        
+
         <Tabs.Screen
           name="notifications"
           options={{
@@ -314,6 +337,7 @@ export default function TabLayout() {
             ),
           }}
         />
+        
         <Tabs.Screen
           name="menu"
           options={{
@@ -329,13 +353,20 @@ export default function TabLayout() {
             ),
           }}
         />
+        
+        <Tabs.Screen
+          name="profile"
+          options={{
+            href: null,
+          }}
+        />
       </Tabs>
 
- <View style={styles.fabContainer} pointerEvents="box-none">
+      <View style={styles.fabContainer} pointerEvents="box-none">
         {/* Left - Post */}
-        <Animated.View 
-          style={[styles.fabOption, postStyle]} 
-          pointerEvents={isOpen ? 'auto' : 'none'}
+        <Animated.View
+          style={[styles.fabOption, postStyle]}
+          pointerEvents={isOpen ? "auto" : "none"}
         >
           <TouchableOpacity
             style={styles.fabOptionButton}
@@ -347,27 +378,27 @@ export default function TabLayout() {
         </Animated.View>
 
         {/* Up - Photo */}
-        <Animated.View 
-          style={[styles.fabOption, photoStyle]} 
-          pointerEvents={isOpen ? 'auto' : 'none'}
+        <Animated.View
+          style={[styles.fabOption, photoStyle]}
+          pointerEvents={isOpen ? "auto" : "none"}
         >
           <TouchableOpacity
             style={styles.fabOptionButton}
             onPress={() => handleAction("photo")}
           >
             <Text style={styles.fabOptionText}>
-              {Platform.OS === 'web' ? '🖼️' : '📷'}
+              {Platform.OS === "web" ? "🖼️" : "📷"}
             </Text>
             <Text style={styles.fabOptionLabel}>
-              {Platform.OS === 'web' ? 'Gallery' : 'Camera'}
+              {Platform.OS === "web" ? "Gallery" : "Camera"}
             </Text>
           </TouchableOpacity>
         </Animated.View>
 
         {/* Right - Location */}
-        <Animated.View 
-          style={[styles.fabOption, locationStyle]} 
-          pointerEvents={isOpen ? 'auto' : 'none'}
+        <Animated.View
+          style={[styles.fabOption, locationStyle]}
+          pointerEvents={isOpen ? "auto" : "none"}
         >
           <TouchableOpacity
             style={styles.fabOptionButton}

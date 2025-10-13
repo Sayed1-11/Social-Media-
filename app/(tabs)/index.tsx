@@ -1,6 +1,6 @@
 import { useThemeStyles } from '@/hooks/useThemeStyles';
 import * as Sharing from 'expo-sharing';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Clipboard,
@@ -34,7 +34,28 @@ type Post = {
     time: string;
   }>;
 };
+type StoryType = {
+  id: string;
+  username: string;
+  name: string;
+  avatar: string;
+  hasNewStory: boolean;
+  isUser: boolean;
+  stories: Array<{
+    id: string;
+    type: 'image' | 'video';
+    url: string;
+    duration: number;
+    seen: boolean;
+    timestamp: string;
+  }>;
+};
 
+type CreateStoryType = {
+  type: 'image' | 'video';
+  url: string;
+  duration: number;
+};
 const initialPosts: Post[]  = [
   {
     id: '1',
@@ -233,44 +254,511 @@ const initialPosts: Post[]  = [
   }
 ];
 
-// Mock data for stories
-const stories = [
+
+const enhancedStories: StoryType[] = [
   {
     id: '1',
-    username: 'Your Story',
-    isUser: true,
+    username: 'currentuser',
+    name: 'Your Story',
+    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=face',
     hasNewStory: true,
-    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=face'
+    isUser: true,
+    stories: [
+      {
+        id: '1-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1579546929662-711aa81148cf?w=400&h=800&fit=crop',
+        duration: 5,
+        seen: false,
+        timestamp: '2 hours ago'
+      },
+      {
+        id: '1-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: false,
+        timestamp: '1 hour ago'
+      }
+    ]
   },
   {
     id: '2',
     username: 'johndoe',
+    name: 'John Doe',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
     hasNewStory: true,
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face'
+    isUser: false,
+    stories: [
+      {
+        id: '2-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: false,
+        timestamp: '1 hour ago'
+      },
+      {
+        id: '2-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1555099962-4199c345e5dd?w=400&h=800&fit=crop',
+        duration: 5,
+        seen: false,
+        timestamp: '45 minutes ago'
+      },
+      {
+        id: '2-3',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1511376777868-611b54f68947?w=400&h=800&fit=crop',
+        duration: 7,
+        seen: false,
+        timestamp: '30 minutes ago'
+      }
+    ]
   },
   {
     id: '3',
     username: 'sarahdev',
+    name: 'Sarah Developer',
+    avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face',
     hasNewStory: true,
-    avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face'
+    isUser: false,
+    stories: [
+      {
+        id: '3-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=800&fit=crop',
+        duration: 7,
+        seen: false,
+        timestamp: '3 hours ago'
+      },
+      {
+        id: '3-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1517077304055-6e89abbf09b0?w=400&h=800&fit=crop',
+        duration: 5,
+        seen: false,
+        timestamp: '2 hours ago'
+      }
+    ]
   },
   {
     id: '4',
     username: 'mikecoder',
+    name: 'Mike Coder',
+    avatar: 'https://images.unsplash.com/photo-1519244703995-f4e0f30006d5?w=150&h=150&fit=crop&crop=face',
     hasNewStory: false,
-    avatar: 'https://images.unsplash.com/photo-1519244703995-f4e0f30006d5?w=150&h=150&fit=crop&crop=face'
+    isUser: false,
+    stories: [
+      {
+        id: '4-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1551650975-87deedd944c3?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: true,
+        timestamp: '5 hours ago'
+      },
+      {
+        id: '4-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?w=400&h=800&fit=crop',
+        duration: 5,
+        seen: true,
+        timestamp: '4 hours ago'
+      }
+    ]
   },
   {
     id: '5',
     username: 'emilydesign',
+    name: 'Emily Designer',
+    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face',
     hasNewStory: true,
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face'
+    isUser: false,
+    stories: [
+      {
+        id: '5-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1545235617-9465d2a55698?w=400&h=800&fit=crop',
+        duration: 8,
+        seen: false,
+        timestamp: 'Just now'
+      },
+      {
+        id: '5-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1558655146-364adaf1fcc9?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: false,
+        timestamp: '10 minutes ago'
+      }
+    ]
   },
   {
     id: '6',
     username: 'alextech',
+    name: 'Alex Tech',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face',
     hasNewStory: false,
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face'
+    isUser: false,
+    stories: [
+      {
+        id: '6-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1517077304055-6e89abbf09b0?w=400&h=800&fit=crop',
+        duration: 5,
+        seen: true,
+        timestamp: '8 hours ago'
+      }
+    ]
+  },
+  {
+    id: '7',
+    username: 'lisatravel',
+    name: 'Lisa Travel',
+    avatar: 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: true,
+    isUser: false,
+    stories: [
+      {
+        id: '7-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400&h=800&fit=crop',
+        duration: 7,
+        seen: false,
+        timestamp: '45 minutes ago'
+      },
+      {
+        id: '7-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: false,
+        timestamp: '30 minutes ago'
+      },
+      {
+        id: '7-3',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=400&h=800&fit=crop',
+        duration: 8,
+        seen: false,
+        timestamp: '15 minutes ago'
+      }
+    ]
+  },
+  {
+    id: '8',
+    username: 'davidfood',
+    name: 'David Foodie',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: true,
+    isUser: false,
+    stories: [
+      {
+        id: '8-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1565958011703-44f9829ba187?w=400&h=800&fit=crop',
+        duration: 5,
+        seen: false,
+        timestamp: '1 hour ago'
+      },
+      {
+        id: '8-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: false,
+        timestamp: '45 minutes ago'
+      }
+    ]
+  },
+  {
+    id: '9',
+    username: 'sophiaart',
+    name: 'Sophia Art',
+    avatar: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: true,
+    isUser: false,
+    stories: [
+      {
+        id: '9-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=400&h=800&fit=crop',
+        duration: 8,
+        seen: false,
+        timestamp: '2 hours ago'
+      },
+      {
+        id: '9-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1578301978693-85fa9c0320b9?w=400&h=800&fit=crop',
+        duration: 7,
+        seen: false,
+        timestamp: '1 hour ago'
+      }
+    ]
+  },
+  {
+    id: '10',
+    username: 'ryanfitness',
+    name: 'Ryan Fitness',
+    avatar: 'https://images.unsplash.com/photo-1507591064344-4c6ce005b128?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: true,
+    isUser: false,
+    stories: [
+      {
+        id: '10-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: false,
+        timestamp: '3 hours ago'
+      },
+      {
+        id: '10-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&h=800&fit=crop',
+        duration: 5,
+        seen: false,
+        timestamp: '2 hours ago'
+      }
+    ]
+  },
+  {
+    id: '11',
+    username: 'oliviamusic',
+    name: 'Olivia Music',
+    avatar: 'https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: false,
+    isUser: false,
+    stories: [
+      {
+        id: '11-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=400&h=800&fit=crop',
+        duration: 7,
+        seen: true,
+        timestamp: '12 hours ago'
+      }
+    ]
+  },
+  {
+    id: '12',
+    username: 'techguru',
+    name: 'Tech Guru',
+    avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671d66?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: true,
+    isUser: false,
+    stories: [
+      {
+        id: '12-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=800&fit=crop',
+        duration: 5,
+        seen: false,
+        timestamp: 'Just now'
+      },
+      {
+        id: '12-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1551650975-87deedd944c3?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: false,
+        timestamp: '5 minutes ago'
+      }
+    ]
+  },
+  {
+    id: '13',
+    username: 'naturelover',
+    name: 'Nature Lover',
+    avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: true,
+    isUser: false,
+    stories: [
+      {
+        id: '13-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400&h=800&fit=crop',
+        duration: 8,
+        seen: false,
+        timestamp: '4 hours ago'
+      },
+      {
+        id: '13-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1426604966848-d7adac402bff?w=400&h=800&fit=crop',
+        duration: 7,
+        seen: false,
+        timestamp: '3 hours ago'
+      }
+    ]
+  },
+  {
+    id: '14',
+    username: 'fashionista',
+    name: 'Fashionista',
+    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: true,
+    isUser: false,
+    stories: [
+      {
+        id: '14-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: false,
+        timestamp: '6 hours ago'
+      },
+      {
+        id: '14-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=400&h=800&fit=crop',
+        duration: 5,
+        seen: false,
+        timestamp: '5 hours ago'
+      }
+    ]
+  },
+  {
+    id: '15',
+    username: 'gamerpro',
+    name: 'Gamer Pro',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: false,
+    isUser: false,
+    stories: [
+      {
+        id: '15-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400&h=800&fit=crop',
+        duration: 7,
+        seen: true,
+        timestamp: '1 day ago'
+      }
+    ]
+  },
+  {
+    id: '16',
+    username: 'bookworm',
+    name: 'Book Worm',
+    avatar: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: true,
+    isUser: false,
+    stories: [
+      {
+        id: '16-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&h=800&fit=crop',
+        duration: 8,
+        seen: false,
+        timestamp: '7 hours ago'
+      },
+      {
+        id: '16-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: false,
+        timestamp: '6 hours ago'
+      }
+    ]
+  },
+  {
+    id: '17',
+    username: 'coffeelover',
+    name: 'Coffee Lover',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: true,
+    isUser: false,
+    stories: [
+      {
+        id: '17-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=400&h=800&fit=crop',
+        duration: 5,
+        seen: false,
+        timestamp: '2 hours ago'
+      },
+      {
+        id: '17-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1447933601403-0c6688de566e?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: false,
+        timestamp: '1 hour ago'
+      }
+    ]
+  },
+  {
+    id: '18',
+    username: 'petlover',
+    name: 'Pet Lover',
+    avatar: 'https://images.unsplash.com/photo-1507591064344-4c6ce005b128?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: true,
+    isUser: false,
+    stories: [
+      {
+        id: '18-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=400&h=800&fit=crop',
+        duration: 7,
+        seen: false,
+        timestamp: '3 hours ago'
+      },
+      {
+        id: '18-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1560809459-56b19b4ac6ba?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: false,
+        timestamp: '2 hours ago'
+      }
+    ]
+  },
+  {
+    id: '19',
+    username: 'adventure_seeker',
+    name: 'Adventure Seeker',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: true,
+    isUser: false,
+    stories: [
+      {
+        id: '19-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1464822759844-d62ed505c4ce?w=400&h=800&fit=crop',
+        duration: 8,
+        seen: false,
+        timestamp: '5 hours ago'
+      },
+      {
+        id: '19-2',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=800&fit=crop',
+        duration: 7,
+        seen: false,
+        timestamp: '4 hours ago'
+      }
+    ]
+  },
+  {
+    id: '20',
+    username: 'homechef',
+    name: 'Home Chef',
+    avatar: 'https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?w=150&h=150&fit=crop&crop=face',
+    hasNewStory: false,
+    isUser: false,
+    stories: [
+      {
+        id: '20-1',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=400&h=800&fit=crop',
+        duration: 6,
+        seen: true,
+        timestamp: '2 days ago'
+      }
+    ]
   }
 ];
 const createStyles = (colors: any) => StyleSheet.create({
@@ -323,6 +811,193 @@ const createStyles = (colors: any) => StyleSheet.create({
     position: 'relative',
     backgroundColor: colors.surface,
   },
+   storyCircleLarge: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    position: 'relative',
+    backgroundColor: colors.surface,
+  },
+  storyImageLarge: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+  },
+  storyPreviewContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  storyHeader: {
+    position: 'absolute',
+    top: 50,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    zIndex: 1001,
+  },
+  storyAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+  },
+  storyUsername: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  storyTime: {
+    color: 'white',
+    fontSize: 12,
+    opacity: 0.8,
+  },
+  progressBarContainer: {
+    position: 'absolute',
+    top: 40,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    gap: 4,
+    zIndex: 1001,
+  },
+  progressBar: {
+    flex: 1,
+    height: 2,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+    borderRadius: 1,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: 'white',
+  },
+  storyContent: {
+    width: '100%',
+    height: '80%',
+    borderRadius: 10,
+  },
+  storyNavigation: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: '30%',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 50,
+    right: 16,
+    zIndex: 1001,
+    padding: 8,
+  },
+  closeButtonText: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: '300',
+  },
+
+  // Story Creation Styles
+  createStoryButton: {
+    backgroundColor: colors.accent,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  createStoryText: {
+    color: 'white',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  createStoryModal: {
+    backgroundColor: colors.surface,
+    margin: 20,
+    borderRadius: 15,
+    padding: 20,
+    maxWidth: 500,
+    width: '90%',
+    alignSelf: 'center',
+  },
+  createStoryTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  storyInput: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 12,
+    color: colors.text,
+    marginBottom: 16,
+  },
+  storyPreview: {
+    width: '100%',
+    height: 400,
+    borderRadius: 10,
+    marginBottom: 16,
+    backgroundColor: colors.background,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  secondaryButton: {
+    flex: 1,
+    backgroundColor: colors.background,
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  secondaryButtonText: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  primaryButton: {
+    flex: 1,
+    backgroundColor: colors.accent,
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  fileInput: {
+    marginBottom: 16,
+  },
+  fileInputText: {
+    color: colors.accent,
+    fontWeight: '600',
+    textAlign: 'center',
+    padding: 12,
+    borderWidth: 2,
+    borderColor: colors.accent,
+    borderRadius: 10,
+    borderStyle: 'dashed',
+  },
   hasNewStory: {
     borderColor: colors.accent,
   },
@@ -352,12 +1027,6 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     lineHeight: 14,
-  },
-  storyUsername: {
-    fontSize: 11,
-    color: colors.text,
-    textAlign: 'center',
-    fontWeight: '500',
   },
   divider: {
     height: 1,
@@ -474,14 +1143,6 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
   },
-  closeButton: {
-    padding: 5,
-  },
-  closeButtonText: {
-    fontSize: 24,
-    color: colors.textSecondary,
-    fontWeight: '300',
-  },
   commentsList: {
     maxHeight: 400,
     padding: 16,
@@ -573,7 +1234,321 @@ export default function HomeScreen() {
   const [newComment, setNewComment] = useState('');
   const [optionsModalVisible, setOptionsModalVisible] = useState(false);
   const [selectedPostForOptions, setSelectedPostForOptions] = useState<Post | null>(null);
-const { colors } = useThemeStyles();
+  
+  // Story states
+  const [stories, setStories] = useState<StoryType[]>(enhancedStories);
+  const [storyModalVisible, setStoryModalVisible] = useState(false);
+  const [currentStory, setCurrentStory] = useState<{story: StoryType, index: number} | null>(null);
+  const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+  
+  // Story creation states
+  const [createStoryModalVisible, setCreateStoryModalVisible] = useState(false);
+  const [newStory, setNewStory] = useState<CreateStoryType>({
+    type: 'image',
+    url: '',
+    duration: 5
+  });
+  const [storyImage, setStoryImage] = useState<string>('');
+
+  const { colors } = useThemeStyles();
+  const openStory = (story: StoryType, storyIndex: number = 0) => {
+    setCurrentStory({ story, index: storyIndex });
+    setCurrentStoryIndex(storyIndex);
+    setProgress(0);
+    setStoryModalVisible(true);
+    
+    // Mark story as seen
+    setStories(prev => prev.map(s => 
+      s.id === story.id 
+        ? {
+            ...s,
+            stories: s.stories.map((st, idx) => 
+              idx === storyIndex ? { ...st, seen: true } : st
+            ),
+            hasNewStory: s.stories.some(st => !st.seen)
+          }
+        : s
+    ));
+  };
+
+  const nextStory = () => {
+    if (!currentStory) return;
+    
+    const nextIndex = currentStoryIndex + 1;
+    if (nextIndex < currentStory.story.stories.length) {
+      setCurrentStoryIndex(nextIndex);
+      setProgress(0);
+    } else {
+      // Move to next user's story
+      const currentIndex = stories.findIndex(s => s.id === currentStory.story.id);
+      if (currentIndex < stories.length - 1) {
+        openStory(stories[currentIndex + 1], 0);
+      } else {
+        setStoryModalVisible(false);
+      }
+    }
+  };
+
+  const previousStory = () => {
+    if (!currentStory) return;
+    
+    const prevIndex = currentStoryIndex - 1;
+    if (prevIndex >= 0) {
+      setCurrentStoryIndex(prevIndex);
+      setProgress(0);
+    } else {
+      // Move to previous user's story
+      const currentIndex = stories.findIndex(s => s.id === currentStory.story.id);
+      if (currentIndex > 0) {
+        const prevUserStories = stories[currentIndex - 1].stories;
+        openStory(stories[currentIndex - 1], prevUserStories.length - 1);
+      }
+    }
+  };
+
+  // Progress bar animation
+  useEffect(() => {
+    if (!storyModalVisible || !currentStory) return;
+    
+    const duration = currentStory.story.stories[currentStoryIndex].duration * 1000;
+    const interval = 50;
+    const steps = duration / interval;
+    const increment = 100 / steps;
+    
+    const timer = setInterval(() => {
+      setProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(timer);
+          nextStory();
+          return 0;
+        }
+        return prev + increment;
+      });
+    }, interval);
+    
+    return () => clearInterval(timer);
+  }, [storyModalVisible, currentStory, currentStoryIndex]);
+
+  // Story creation functions
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const imageUrl = e.target?.result as string;
+        setStoryImage(imageUrl);
+        setNewStory(prev => ({ ...prev, url: imageUrl }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const createNewStory = () => {
+    if (!newStory.url.trim()) {
+      Alert.alert('Error', 'Please select an image for your story');
+      return;
+    }
+
+    const newStoryItem = {
+      id: Date.now().toString(),
+      type: 'image' as const,
+      url: newStory.url,
+      duration: newStory.duration,
+      seen: false,
+      timestamp: 'Just now'
+    };
+
+    setStories(prev => prev.map(story => 
+      story.isUser 
+        ? {
+            ...story,
+            hasNewStory: true,
+            stories: [newStoryItem, ...story.stories]
+          }
+        : story
+    ));
+
+    setCreateStoryModalVisible(false);
+    setNewStory({ type: 'image', url: '', duration: 5 });
+    setStoryImage('');
+    Alert.alert('Success', 'Your story has been posted!');
+  };
+
+  // Enhanced story render function
+  const renderStory = ({ item }: { item: StoryType }) => (
+    <TouchableOpacity 
+      style={styles.storyContainer}
+      onPress={() => openStory(item, 0)}
+    >
+      <View style={[
+        styles.storyCircleLarge,
+        item.hasNewStory && styles.hasNewStory,
+        item.isUser && styles.userStory
+      ]}>
+        <Image 
+          source={{ uri: item.avatar }} 
+          style={styles.storyImageLarge}
+        />
+        {item.isUser && (
+          <View style={styles.addStoryButton}>
+            <Text style={styles.addStoryText}>+</Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.storyUsername} numberOfLines={1}>
+        {item.isUser ? 'Your Story' : item.username}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  // Story Preview Modal
+  const renderStoryPreview = () => {
+    if (!currentStory) return null;
+    
+    const currentStoryItem = currentStory.story.stories[currentStoryIndex];
+    
+    return (
+      <Modal
+        visible={storyModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setStoryModalVisible(false)}
+      >
+        <View style={styles.storyPreviewContainer}>
+          {/* Progress Bars */}
+          <View style={styles.progressBarContainer}>
+            {currentStory.story.stories.map((_, index) => (
+              <View key={index} style={styles.progressBar}>
+                <View 
+                  style={[
+                    styles.progressBarFill,
+                    { 
+                      width: index === currentStoryIndex 
+                        ? `${progress}%` 
+                        : index < currentStoryIndex ? '100%' : '0%' 
+                    }
+                  ]} 
+                />
+              </View>
+            ))}
+          </View>
+
+          {/* Story Header */}
+          <View style={styles.storyHeader}>
+            <Image 
+              source={{ uri: currentStory.story.avatar }} 
+              style={styles.storyAvatar}
+            />
+            <View>
+              <Text style={styles.storyUsername}>{currentStory.story.name}</Text>
+              <Text style={styles.storyTime}>{currentStoryItem.timestamp}</Text>
+            </View>
+          </View>
+
+          {/* Story Content */}
+          <Image 
+            source={{ uri: currentStoryItem.url }} 
+            style={styles.storyContent}
+            resizeMode="contain"
+          />
+
+          {/* Navigation Areas */}
+          <TouchableOpacity 
+            style={[styles.storyNavigation, { left: 0 }]}
+            onPress={previousStory}
+          />
+          <TouchableOpacity 
+            style={[styles.storyNavigation, { right: 0 }]}
+            onPress={nextStory}
+          />
+
+          {/* Close Button */}
+          <TouchableOpacity 
+            style={styles.closeButton}
+            onPress={() => setStoryModalVisible(false)}
+          >
+            <Text style={styles.closeButtonText}>×</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    );
+  };
+
+  // Story Creation Modal
+  const renderCreateStoryModal = () => (
+    <Modal
+      visible={createStoryModalVisible}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setCreateStoryModalVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.createStoryModal}>
+          <Text style={styles.createStoryTitle}>Create New Story</Text>
+          
+          {/* Image Upload */}
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleImageUpload}
+            style={{ display: 'none' }}
+            id="story-upload"
+          />
+          <label htmlFor="story-upload">
+            <View style={styles.fileInput}>
+              <Text style={styles.fileInputText}>
+                {storyImage ? 'Change Image' : 'Choose Image'}
+              </Text>
+            </View>
+          </label>
+
+          {/* Image Preview */}
+          {storyImage && (
+            <Image 
+              source={{ uri: storyImage }} 
+              style={styles.storyPreview}
+              resizeMode="cover"
+            />
+          )}
+
+          {/* Duration Input */}
+          <TextInput
+            style={styles.storyInput}
+            placeholder="Duration in seconds (5-10)"
+            value={newStory.duration.toString()}
+            onChangeText={(text) => {
+              const duration = parseInt(text) || 5;
+              setNewStory(prev => ({ 
+                ...prev, 
+                duration: Math.min(Math.max(duration, 3), 10) 
+              }));
+            }}
+            keyboardType="numeric"
+            placeholderTextColor={colors.textSecondary}
+          />
+
+          {/* Buttons */}
+          <View style={styles.buttonRow}>
+            <TouchableOpacity 
+              style={styles.secondaryButton}
+              onPress={() => setCreateStoryModalVisible(false)}
+            >
+              <Text style={styles.secondaryButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.primaryButton}
+              onPress={createNewStory}
+              disabled={!storyImage}
+            >
+              <Text style={styles.primaryButtonText}>Post Story</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   const likePost = (postId: string) => {
     setPosts(posts.map(post => {
       if (post.id === postId) {
@@ -662,28 +1637,6 @@ const downloadImage = async (post: Post | null) => {
     setOptionsModalVisible(true);
   };
  const styles = createStyles(colors);
-  const renderStory = ({ item }: { item: any }) => (
-    <TouchableOpacity style={styles.storyContainer}>
-      <View style={[
-        styles.storyCircle,
-        item.hasNewStory && styles.hasNewStory,
-        item.isUser && styles.userStory
-      ]}>
-        <Image 
-          source={{ uri: item.avatar }} 
-          style={styles.storyImage}
-        />
-        {item.isUser && (
-          <View style={styles.addStoryButton}>
-            <Text style={styles.addStoryText}>+</Text>
-          </View>
-        )}
-      </View>
-      <Text style={styles.storyUsername} numberOfLines={1}>
-        {item.isUser ? 'Your Story' : item.username}
-      </Text>
-    </TouchableOpacity>
-  );
 
   const renderPost = ({ item }: { item: Post }) => (
     <View style={styles.post}>
@@ -748,7 +1701,7 @@ const downloadImage = async (post: Post | null) => {
   const HeaderComponent = () => (
     <View style={styles.header}>
       {/* Stories Section */}
-      <View style={styles.storiesSection}>
+           <View style={styles.storiesSection}>
         <FlatList
           data={stories}
           renderItem={renderStory}
@@ -757,6 +1710,14 @@ const downloadImage = async (post: Post | null) => {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.storiesList}
         />
+        
+        {/* Create Story Button */}
+        <TouchableOpacity 
+          style={styles.createStoryButton}
+          onPress={() => setCreateStoryModalVisible(true)}
+        >
+          <Text style={styles.createStoryText}>+ Create Story</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Divider */}
@@ -778,7 +1739,8 @@ const downloadImage = async (post: Post | null) => {
         ListHeaderComponent={HeaderComponent}
         contentContainerStyle={styles.listContent}
       />
-
+ {renderStoryPreview()}
+      {renderCreateStoryModal()}
       {/* Comments Modal */}
       <Modal
         visible={commentModalVisible}

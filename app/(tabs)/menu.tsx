@@ -17,65 +17,70 @@ import {
 import { useThemeStyles } from '../../hooks/useThemeStyles';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+
 export default function MenuScreen() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth(); // Get user from AuthContext
   const router = useRouter();
   const { theme, toggleTheme, setTheme } = useTheme();
   const { colors, isDark } = useThemeStyles();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
 
-
-
-const handleLogout = async () => {
-  console.log('🔄 handleLogout function called');
-  
-  // Alternative 1: Simple immediate logout (remove confirmation)
-  // await logout();
-  // return;
-
-  // Alternative 2: Use a different alert approach
-  if (Platform.OS === 'web') {
-    // For web, use window.confirm
-    const confirmed = window.confirm('Are you sure you want to logout?');
-    if (confirmed) {
-      try {
-        console.log('✅ Logout confirmed, calling logout()...');
-        await logout();
-      } catch (error) {
-        console.error('Logout error:', error);
-        window.alert('Failed to logout. Please try again.');
+  const handleLogout = async () => {
+    console.log('🔄 handleLogout function called');
+    
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Are you sure you want to logout?');
+      if (confirmed) {
+        try {
+          console.log('✅ Logout confirmed, calling logout()...');
+          await logout();
+        } catch (error) {
+          console.error('Logout error:', error);
+          window.alert('Failed to logout. Please try again.');
+        }
+      } else {
+        console.log('❌ Logout cancelled');
       }
     } else {
-      console.log('❌ Logout cancelled');
+      Alert.alert(
+        'Logout',
+        'Are you sure you want to logout?',
+        [
+          {
+            text: 'Cancel',
+            onPress: () => console.log('Cancel Pressed'),
+            style: 'cancel',
+          },
+          { 
+            text: 'Logout', 
+            onPress: async () => {
+              try {
+                console.log('✅ Logout confirmed, calling logout()...');
+                await logout();
+              } catch (error) {
+                console.error('Logout error:', error);
+                Alert.alert('Error', 'Failed to logout. Please try again.');
+              }
+            } 
+          },
+        ],
+        { cancelable: false }
+      );
     }
-  } else {
-    // For mobile, try a different Alert approach
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        {
-          text: 'Cancel',
-          onPress: () => console.log('Cancel Pressed'),
-          style: 'cancel',
-        },
-        { 
-          text: 'Logout', 
-          onPress: async () => {
-            try {
-              console.log('✅ Logout confirmed, calling logout()...');
-              await logout();
-            } catch (error) {
-              console.error('Logout error:', error);
-              Alert.alert('Error', 'Failed to logout. Please try again.');
-            }
-          } 
-        },
-      ],
-      { cancelable: false }
-    );
-  }
-};
+  };
+
+  // Calculate user stats (you can replace these with actual data from your backend)
+  const userStats = {
+    posts: 245, // This should come from your backend
+    followers: 1200, // This should come from your backend
+    following: 456, // This should come from your backend
+  };
+
+  // Fallback profile picture if user doesn't have one
+  const profilePicture = user?.profilePicture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
+
+  // Generate username from fullName if not available
+  const username = user?.username || `@${user?.fullName?.toLowerCase().replace(/\s+/g, '_')}` || '@user';
 
   const menuSections = [
     {
@@ -205,8 +210,9 @@ const handleLogout = async () => {
           <View style={styles.profileContainer}>
             <View style={styles.profileImageContainer}>
               <Image 
-                source={{ uri: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face' }}
+                source={{ uri: profilePicture }}
                 style={styles.profileImage}
+                defaultSource={{ uri: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face' }}
               />
               <View style={styles.profileImageBadge}>
                 <Ionicons name="camera" size={12} color="#fff" />
@@ -214,25 +220,29 @@ const handleLogout = async () => {
             </View>
             
             <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>Sheikh Sayed</Text>
-              <Text style={styles.profileHandle}>@sheikhsayed</Text>
+              <Text style={styles.profileName}>
+                {user?.fullName || 'User Name'}
+              </Text>
+              <Text style={styles.profileHandle}>
+                {username}
+              </Text>
               
-              <View style={styles.profileStats}>
-                <View style={styles.profileStat}>
-                  <Text style={styles.profileStatNumber}>245</Text>
-                  <Text style={styles.profileStatLabel}>Posts</Text>
-                </View>
-                <View style={styles.profileStat}>
-                  <Text style={styles.profileStatNumber}>1.2K</Text>
-                  <Text style={styles.profileStatLabel}>Followers</Text>
-                </View>
-                <View style={styles.profileStat}>
-                  <Text style={styles.profileStatNumber}>456</Text>
-                  <Text style={styles.profileStatLabel}>Following</Text>
-                </View>
-              </View>
+              {/* User Bio */}
+              {user?.bio ? (
+                <Text style={styles.profileBio}>
+                  {user.bio}
+                </Text>
+              ) : (
+                <Text style={styles.profileBioPlaceholder}>
+                  No bio yet. Tap to add a bio.
+                </Text>
+              )}
+              
+    
             </View>
           </View>
+
+         
         </Pressable>
 
         {/* Menu Sections */}
@@ -247,7 +257,7 @@ const handleLogout = async () => {
           ))}
         </View>
 
-        {/* Logout Section - Separate from menuSections */}
+        {/* Logout Section */}
         <View style={styles.logoutSection}>
           <TouchableOpacity 
             style={styles.logoutButton}
@@ -261,7 +271,10 @@ const handleLogout = async () => {
 
         {/* App Version */}
         <View style={styles.versionContainer}>
-          <Text style={styles.versionText}>SmartConnect v1.0.0 • {theme} mode</Text>
+          <Text style={styles.versionText}>
+            SmartConnect v1.0.0 • {theme} mode
+            {user?.email && ` • ${user.email}`}
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -306,7 +319,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   profileContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   profileImageContainer: {
     position: 'relative',
@@ -344,11 +357,23 @@ const createStyles = (colors: any) => StyleSheet.create({
   profileHandle: {
     color: colors.textSecondary,
     fontSize: 14,
+    marginBottom: 8,
+  },
+  profileBio: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  profileBioPlaceholder: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontStyle: 'italic',
     marginBottom: 12,
   },
   profileStats: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     marginTop: 8,
   },
   profileStat: {
@@ -438,7 +463,6 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  // New Logout Section Styles
   logoutSection: {
     padding: 16,
     paddingTop: 0,
@@ -467,5 +491,6 @@ const createStyles = (colors: any) => StyleSheet.create({
   versionText: {
     color: colors.textSecondary,
     fontSize: 12,
+    textAlign: 'center',
   },
 });

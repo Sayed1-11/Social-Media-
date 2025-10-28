@@ -1,20 +1,76 @@
 import { useThemeStyles } from '@/hooks/useThemeStyles';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
 import * as Sharing from 'expo-sharing';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
-  Clipboard,
+  Dimensions,
   FlatList,
   Image,
   Modal,
   Platform,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
+import { useAuth } from '../context/AuthContext';
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=face';
+
+// API Types based on your backend
+type User = {
+  _id: string;
+  name: string;
+  email: string;
+  profilePicture: string;
+  bio: string;
+  isProfileComplete: boolean;
+  postsCount?: number;
+  friendsCount?: number;
+};
+
+type ApiPost = {
+  _id: string;
+  userId: string;
+  user?: User;
+  content: string;
+  image?: string;
+  imageData?: any;
+  privacy: string;
+  likes: Array<{
+    userId: string;
+    likedAt: Date;
+  }>;
+  comments: Array<{
+    _id: string;
+    userId: string;
+    user?: User;
+    content: string;
+    createdAt: Date;
+  }>;
+  shares: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type ApiStory = {
+  _id: string;
+  userId: string;
+  user?: User;
+  image: string;
+  content: string;
+  createdAt: Date;
+  expiresAt: Date;
+  seen?: boolean;
+};
+
+// Component Types
 type Post = {
   id: string;
   username: string;
@@ -24,7 +80,7 @@ type Post = {
   comments: number;
   time: string;
   userImage: string;
-  image: string;
+  image?: string;
   isLiked: boolean;
   commentsList: Array<{
     id: string;
@@ -33,7 +89,10 @@ type Post = {
     comment: string;
     time: string;
   }>;
+  // For API operations
+  _id?: string;
 };
+
 type StoryType = {
   id: string;
   username: string;
@@ -49,718 +108,29 @@ type StoryType = {
     seen: boolean;
     timestamp: string;
   }>;
+  // For API operations
+  _id?: string;
+  userId?: string;
 };
 
 type CreateStoryType = {
-  type: 'image' | 'video';
-  url: string;
-  duration: number;
+  image: string;
+  content: string;
 };
-const initialPosts: Post[]  = [
-  {
-    id: '1',
-    username: 'technews',
-    name: 'Tech News Daily',
-    content: 'Breaking: New AI model breaks all performance records in language understanding tasks. Researchers say this could revolutionize how we interact with technology.',
-    likes: 324,
-    comments: 45,
-    time: '1h ago',
-    userImage: 'https://images.unsplash.com/photo-1611224923853-80b023f02d71?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '2',
-    username: 'climatewatch',
-    name: 'Climate Watch',
-    content: 'Major breakthrough in renewable energy: New solar panel technology achieves 50% efficiency in lab tests. This could make solar power more accessible worldwide.',
-    likes: 512,
-    comments: 89,
-    time: '2h ago',
-    userImage: 'https://images.unsplash.com/photo-1569163139394-de4e4f43e4e3?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1509391366360-2e959784a276?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '3',
-    username: 'spaceexplorer',
-    name: 'Space Explorer',
-    content: 'NASA announces discovery of Earth-like planet in habitable zone. Could this be the future home for humanity? Scientists are excited about the possibilities.',
-    likes: 891,
-    comments: 156,
-    time: '3h ago',
-    userImage: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1446776653964-20c1d3a81b06?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '4',
-    username: 'healthinnovate',
-    name: 'Health Innovations',
-    content: 'Revolutionary cancer treatment shows 95% success rate in clinical trials. New immunotherapy approach could change how we fight cancer forever.',
-    likes: 723,
-    comments: 203,
-    time: '4h ago',
-    userImage: 'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1559757175-0eb30cd8c063?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '5',
-    username: 'futuretech',
-    name: 'Future Tech',
-    content: 'Quantum computer solves problem in 4 minutes that would take supercomputer 10,000 years. This marks a major milestone in quantum computing.',
-    likes: 645,
-    comments: 178,
-    time: '5h ago',
-    userImage: 'https://images.unsplash.com/photo-1535223289827-42f1e9919769?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '6',
-    username: 'greenenergy',
-    name: 'Green Energy News',
-    content: 'World\'s largest offshore wind farm now operational, powering 1 million homes. This project sets new standards for renewable energy infrastructure.',
-    likes: 432,
-    comments: 67,
-    time: '6h ago',
-    userImage: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1466611653911-95081537e5b7?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '7',
-    username: 'aiweekly',
-    name: 'AI Weekly',
-    content: 'New AI system can predict protein structures with unprecedented accuracy. This breakthrough could accelerate drug discovery and disease research.',
-    likes: 567,
-    comments: 134,
-    time: '7h ago',
-    userImage: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1677442135136-760c81240c70?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '8',
-    username: 'sustainability',
-    name: 'Sustainable Future',
-    content: 'Breakthrough in battery technology: New solid-state batteries offer 3x the capacity and faster charging. Electric vehicles could see major improvements.',
-    likes: 789,
-    comments: 245,
-    time: '8h ago',
-    userImage: 'https://images.unsplash.com/photo-1563013541-2dcc5e5d2c5a?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '9',
-    username: 'medicalbreak',
-    name: 'Medical Breakthroughs',
-    content: 'First successful human trial of artificial blood replacement. This could solve blood shortage crises and eliminate blood typing issues.',
-    likes: 923,
-    comments: 312,
-    time: '9h ago',
-    userImage: 'https://images.unsplash.com/photo-1551601651-2a8555f1a136?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1559757175-0eb30cd8c063?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '10',
-    username: 'roboticsworld',
-    name: 'Robotics World',
-    content: 'Humanoid robot now capable of complex human interactions and emotional responses. The future of robotics is closer than we think.',
-    likes: 678,
-    comments: 189,
-    time: '10h ago',
-    userImage: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '11',
-    username: 'cybersecurity',
-    name: 'Cyber Security Today',
-    content: 'New quantum encryption method makes data transmission completely unhackable. This could revolutionize online security and privacy.',
-    likes: 456,
-    comments: 98,
-    time: '11h ago',
-    userImage: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '12',
-    username: 'futuretransport',
-    name: 'Future Transport',
-    content: 'Hyperloop prototype reaches record speed of 800 mph. This could make cross-country travel faster than ever imagined.',
-    likes: 834,
-    comments: 267,
-    time: '12h ago',
-    userImage: 'https://images.unsplash.com/photo-1542744095-fcf48d80b0fd?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1542744095-291d1f67b221?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '13',
-    username: 'oceanexplorer',
-    name: 'Ocean Explorer',
-    content: 'Scientists discover new species in deepest part of ocean. These creatures could hold keys to medical and technological breakthroughs.',
-    likes: 567,
-    comments: 145,
-    time: '13h ago',
-    userImage: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '14',
-    username: 'agriculturetech',
-    name: 'Agriculture Tech',
-    content: 'Vertical farming produces 100x more food per square foot than traditional farming. This could solve urban food security issues.',
-    likes: 489,
-    comments: 112,
-    time: '14h ago',
-    userImage: 'https://images.unsplash.com/photo-1586771107445-d3ca888129ce?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1586771107445-d3ca888129ce?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  },
-  {
-    id: '15',
-    username: 'neuroscience',
-    name: 'Neuroscience News',
-    content: 'Brain-computer interface allows paralyzed patients to control devices with their thoughts. This technology is changing lives every day.',
-    likes: 712,
-    comments: 234,
-    time: '15h ago',
-    userImage: 'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=400&h=400&fit=crop',
-    image: 'https://images.unsplash.com/photo-1559757175-0eb30cd8c063?w=800&h=600&fit=crop',
-    isLiked: false,
-    commentsList: []
-  }
-];
 
+type FriendRequest = {
+  _id: string;
+  requesterId: string;
+  recipientId: string;
+  requester?: User;
+  status: string;
+  createdAt: Date;
+};
 
-const enhancedStories: StoryType[] = [
-  {
-    id: '1',
-    username: 'currentuser',
-    name: 'Your Story',
-    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: true,
-    stories: [
-      {
-        id: '1-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1579546929662-711aa81148cf?w=400&h=800&fit=crop',
-        duration: 5,
-        seen: false,
-        timestamp: '2 hours ago'
-      },
-      {
-        id: '1-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: false,
-        timestamp: '1 hour ago'
-      }
-    ]
-  },
-  {
-    id: '2',
-    username: 'johndoe',
-    name: 'John Doe',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '2-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: false,
-        timestamp: '1 hour ago'
-      },
-      {
-        id: '2-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1555099962-4199c345e5dd?w=400&h=800&fit=crop',
-        duration: 5,
-        seen: false,
-        timestamp: '45 minutes ago'
-      },
-      {
-        id: '2-3',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1511376777868-611b54f68947?w=400&h=800&fit=crop',
-        duration: 7,
-        seen: false,
-        timestamp: '30 minutes ago'
-      }
-    ]
-  },
-  {
-    id: '3',
-    username: 'sarahdev',
-    name: 'Sarah Developer',
-    avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '3-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=800&fit=crop',
-        duration: 7,
-        seen: false,
-        timestamp: '3 hours ago'
-      },
-      {
-        id: '3-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1517077304055-6e89abbf09b0?w=400&h=800&fit=crop',
-        duration: 5,
-        seen: false,
-        timestamp: '2 hours ago'
-      }
-    ]
-  },
-  {
-    id: '4',
-    username: 'mikecoder',
-    name: 'Mike Coder',
-    avatar: 'https://images.unsplash.com/photo-1519244703995-f4e0f30006d5?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: false,
-    isUser: false,
-    stories: [
-      {
-        id: '4-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1551650975-87deedd944c3?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: true,
-        timestamp: '5 hours ago'
-      },
-      {
-        id: '4-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?w=400&h=800&fit=crop',
-        duration: 5,
-        seen: true,
-        timestamp: '4 hours ago'
-      }
-    ]
-  },
-  {
-    id: '5',
-    username: 'emilydesign',
-    name: 'Emily Designer',
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '5-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1545235617-9465d2a55698?w=400&h=800&fit=crop',
-        duration: 8,
-        seen: false,
-        timestamp: 'Just now'
-      },
-      {
-        id: '5-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1558655146-364adaf1fcc9?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: false,
-        timestamp: '10 minutes ago'
-      }
-    ]
-  },
-  {
-    id: '6',
-    username: 'alextech',
-    name: 'Alex Tech',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: false,
-    isUser: false,
-    stories: [
-      {
-        id: '6-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1517077304055-6e89abbf09b0?w=400&h=800&fit=crop',
-        duration: 5,
-        seen: true,
-        timestamp: '8 hours ago'
-      }
-    ]
-  },
-  {
-    id: '7',
-    username: 'lisatravel',
-    name: 'Lisa Travel',
-    avatar: 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '7-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400&h=800&fit=crop',
-        duration: 7,
-        seen: false,
-        timestamp: '45 minutes ago'
-      },
-      {
-        id: '7-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: false,
-        timestamp: '30 minutes ago'
-      },
-      {
-        id: '7-3',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=400&h=800&fit=crop',
-        duration: 8,
-        seen: false,
-        timestamp: '15 minutes ago'
-      }
-    ]
-  },
-  {
-    id: '8',
-    username: 'davidfood',
-    name: 'David Foodie',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '8-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1565958011703-44f9829ba187?w=400&h=800&fit=crop',
-        duration: 5,
-        seen: false,
-        timestamp: '1 hour ago'
-      },
-      {
-        id: '8-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: false,
-        timestamp: '45 minutes ago'
-      }
-    ]
-  },
-  {
-    id: '9',
-    username: 'sophiaart',
-    name: 'Sophia Art',
-    avatar: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '9-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=400&h=800&fit=crop',
-        duration: 8,
-        seen: false,
-        timestamp: '2 hours ago'
-      },
-      {
-        id: '9-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1578301978693-85fa9c0320b9?w=400&h=800&fit=crop',
-        duration: 7,
-        seen: false,
-        timestamp: '1 hour ago'
-      }
-    ]
-  },
-  {
-    id: '10',
-    username: 'ryanfitness',
-    name: 'Ryan Fitness',
-    avatar: 'https://images.unsplash.com/photo-1507591064344-4c6ce005b128?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '10-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: false,
-        timestamp: '3 hours ago'
-      },
-      {
-        id: '10-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&h=800&fit=crop',
-        duration: 5,
-        seen: false,
-        timestamp: '2 hours ago'
-      }
-    ]
-  },
-  {
-    id: '11',
-    username: 'oliviamusic',
-    name: 'Olivia Music',
-    avatar: 'https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: false,
-    isUser: false,
-    stories: [
-      {
-        id: '11-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=400&h=800&fit=crop',
-        duration: 7,
-        seen: true,
-        timestamp: '12 hours ago'
-      }
-    ]
-  },
-  {
-    id: '12',
-    username: 'techguru',
-    name: 'Tech Guru',
-    avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671d66?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '12-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=800&fit=crop',
-        duration: 5,
-        seen: false,
-        timestamp: 'Just now'
-      },
-      {
-        id: '12-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1551650975-87deedd944c3?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: false,
-        timestamp: '5 minutes ago'
-      }
-    ]
-  },
-  {
-    id: '13',
-    username: 'naturelover',
-    name: 'Nature Lover',
-    avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '13-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400&h=800&fit=crop',
-        duration: 8,
-        seen: false,
-        timestamp: '4 hours ago'
-      },
-      {
-        id: '13-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1426604966848-d7adac402bff?w=400&h=800&fit=crop',
-        duration: 7,
-        seen: false,
-        timestamp: '3 hours ago'
-      }
-    ]
-  },
-  {
-    id: '14',
-    username: 'fashionista',
-    name: 'Fashionista',
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '14-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: false,
-        timestamp: '6 hours ago'
-      },
-      {
-        id: '14-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=400&h=800&fit=crop',
-        duration: 5,
-        seen: false,
-        timestamp: '5 hours ago'
-      }
-    ]
-  },
-  {
-    id: '15',
-    username: 'gamerpro',
-    name: 'Gamer Pro',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: false,
-    isUser: false,
-    stories: [
-      {
-        id: '15-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400&h=800&fit=crop',
-        duration: 7,
-        seen: true,
-        timestamp: '1 day ago'
-      }
-    ]
-  },
-  {
-    id: '16',
-    username: 'bookworm',
-    name: 'Book Worm',
-    avatar: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '16-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&h=800&fit=crop',
-        duration: 8,
-        seen: false,
-        timestamp: '7 hours ago'
-      },
-      {
-        id: '16-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: false,
-        timestamp: '6 hours ago'
-      }
-    ]
-  },
-  {
-    id: '17',
-    username: 'coffeelover',
-    name: 'Coffee Lover',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '17-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=400&h=800&fit=crop',
-        duration: 5,
-        seen: false,
-        timestamp: '2 hours ago'
-      },
-      {
-        id: '17-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1447933601403-0c6688de566e?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: false,
-        timestamp: '1 hour ago'
-      }
-    ]
-  },
-  {
-    id: '18',
-    username: 'petlover',
-    name: 'Pet Lover',
-    avatar: 'https://images.unsplash.com/photo-1507591064344-4c6ce005b128?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '18-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=400&h=800&fit=crop',
-        duration: 7,
-        seen: false,
-        timestamp: '3 hours ago'
-      },
-      {
-        id: '18-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1560809459-56b19b4ac6ba?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: false,
-        timestamp: '2 hours ago'
-      }
-    ]
-  },
-  {
-    id: '19',
-    username: 'adventure_seeker',
-    name: 'Adventure Seeker',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: true,
-    isUser: false,
-    stories: [
-      {
-        id: '19-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1464822759844-d62ed505c4ce?w=400&h=800&fit=crop',
-        duration: 8,
-        seen: false,
-        timestamp: '5 hours ago'
-      },
-      {
-        id: '19-2',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=800&fit=crop',
-        duration: 7,
-        seen: false,
-        timestamp: '4 hours ago'
-      }
-    ]
-  },
-  {
-    id: '20',
-    username: 'homechef',
-    name: 'Home Chef',
-    avatar: 'https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?w=150&h=150&fit=crop&crop=face',
-    hasNewStory: false,
-    isUser: false,
-    stories: [
-      {
-        id: '20-1',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=400&h=800&fit=crop',
-        duration: 6,
-        seen: true,
-        timestamp: '2 days ago'
-      }
-    ]
-  }
-];
+// API Configuration
+const API_BASE_URL = 'http://localhost:3000';
+
+// Styles remain the same as your original code
 const createStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
@@ -776,7 +146,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   appTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: colors.accent,
+    color: colors.primary,
   },
   listContent: {
     paddingBottom: 20,
@@ -784,133 +154,177 @@ const createStyles = (colors: any) => StyleSheet.create({
   header: {
     backgroundColor: colors.background,
   },
-  // Stories Section Styles
+  
+  // Stories Section
   storiesSection: {
-    paddingVertical: 20,
+    paddingVertical: 15,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
   storiesList: {
     paddingHorizontal: 4,
   },
   storyContainer: {
     alignItems: 'center',
-    marginHorizontal: 8,
-    width: 68,
+    marginHorizontal: 6,
+    width: 72,
   },
   storyCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    borderWidth: 2,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+    position: 'relative',
+    backgroundColor: colors.surface,
+  },
+  hasNewStory: {
+    borderColor: colors.primary,
+  },
+  seenStory: {
     borderColor: colors.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    position: 'relative',
-    backgroundColor: colors.surface,
   },
-   storyCircleLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 3,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    position: 'relative',
-    backgroundColor: colors.surface,
+  storyImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
   },
-  storyImageLarge: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+  storyUsername: {
+    fontSize: 12,
+    color: colors.text,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 2,
   },
-  storyPreviewContainer: {
+  addStoryButton: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    bottom: -2,
+    right: -2,
+    backgroundColor: colors.primary,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  addStoryText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  
+  // Full Screen Story Viewer
+  fullScreenStoryContainer: {
+    flex: 1,
+    backgroundColor: 'black',
+  },
+  progressBarContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'web' ? 20 : 50,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    gap: 4,
     zIndex: 1000,
+  },
+  progressBar: {
+    flex: 1,
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
   },
   storyHeader: {
     position: 'absolute',
-    top: 50,
+    top: Platform.OS === 'web' ? 50 : 80,
     left: 0,
     right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    zIndex: 1001,
+    zIndex: 1000,
   },
   storyAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginRight: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginRight: 12,
+    borderWidth: 2,
+    borderColor: colors.primary,
   },
-  storyUsername: {
+  storyUserInfo: {
+    flex: 1,
+  },
+  storyName: {
     color: 'white',
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: 16,
   },
   storyTime: {
-    color: 'white',
-    fontSize: 12,
-    opacity: 0.8,
-  },
-  progressBarContainer: {
-    position: 'absolute',
-    top: 40,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    gap: 4,
-    zIndex: 1001,
-  },
-  progressBar: {
-    flex: 1,
-    height: 2,
-    backgroundColor: 'rgba(255,255,255,0.4)',
-    borderRadius: 1,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: 'white',
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
   },
   storyContent: {
-    width: '100%',
-    height: '80%',
-    borderRadius: 10,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
   },
   storyNavigation: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     width: '30%',
+    zIndex: 999,
   },
   closeButton: {
     position: 'absolute',
-    top: 50,
-    right: 16,
-    zIndex: 1001,
-    padding: 8,
+    top: Platform.OS === 'web' ? 30 : 60,
+    right: 20,
+    zIndex: 1000,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   closeButtonText: {
     color: 'white',
     fontSize: 24,
     fontWeight: '300',
   },
+  actionButtons: {
+    position: 'absolute',
+    bottom: 40,
+    right: 20,
+    zIndex: 1000,
+    gap: 15,
+  },
+  actionButton: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionButtonText: {
+    color: 'white',
+    fontSize: 20,
+  },
 
-  // Story Creation Styles
+  // Story Creation
   createStoryButton: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 20,
@@ -918,6 +332,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 16,
+    alignSelf: 'center',
   },
   createStoryText: {
     color: 'white',
@@ -976,7 +391,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   primaryButton: {
     flex: 1,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.primary,
     padding: 12,
     borderRadius: 10,
     alignItems: 'center',
@@ -989,53 +404,20 @@ const createStyles = (colors: any) => StyleSheet.create({
     marginBottom: 16,
   },
   fileInputText: {
-    color: colors.accent,
+    color: colors.primary,
     fontWeight: '600',
     textAlign: 'center',
     padding: 12,
     borderWidth: 2,
-    borderColor: colors.accent,
+    borderColor: colors.primary,
     borderRadius: 10,
     borderStyle: 'dashed',
   },
-  hasNewStory: {
-    borderColor: colors.accent,
-  },
-  userStory: {
-    borderColor: colors.border,
-  },
-  storyImage: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-  },
-  addStoryButton: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    backgroundColor: colors.accent,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: colors.background,
-  },
-  addStoryText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-    lineHeight: 14,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-  },
+
   // Post Styles
   post: {
     backgroundColor: colors.surface,
-    marginBottom: 12,
+    marginBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     paddingVertical: 16,
@@ -1110,8 +492,9 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontWeight: '500',
   },
   likedAction: {
-    color: colors.accent,
+    color: colors.primary,
   },
+
   // Modal Styles
   modalOverlay: {
     flex: 1,
@@ -1129,6 +512,9 @@ const createStyles = (colors: any) => StyleSheet.create({
     margin: 20,
     borderRadius: 15,
     padding: 10,
+    maxWidth: 400,
+    alignSelf: 'center',
+    width: '90%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1190,7 +576,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     maxHeight: 100,
   },
   commentSubmitButton: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 20,
@@ -1213,47 +599,289 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontWeight: '500',
   },
   reportOption: {
-    color: colors.accent,
+    color: colors.error,
   },
   cancelButton: {
     borderBottomWidth: 0,
     marginTop: 10,
   },
   cancelText: {
-    color: colors.accent,
+    color: colors.primary,
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: colors.textSecondary,
+  },
 });
 
 export default function HomeScreen() {
-  const [posts, setPosts] = useState<Post[]>(initialPosts);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [commentModalVisible, setCommentModalVisible] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [optionsModalVisible, setOptionsModalVisible] = useState(false);
   const [selectedPostForOptions, setSelectedPostForOptions] = useState<Post | null>(null);
+  const [loading, setLoading] = useState(true);
   
   // Story states
-  const [stories, setStories] = useState<StoryType[]>(enhancedStories);
+  const [stories, setStories] = useState<StoryType[]>([]);
   const [storyModalVisible, setStoryModalVisible] = useState(false);
-  const [currentStory, setCurrentStory] = useState<{story: StoryType, index: number} | null>(null);
+  const [currentStory, setCurrentStory] = useState<StoryType | null>(null);
   const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
   const [progress, setProgress] = useState(0);
+  const { getAuthHeaders, isAuthenticated } = useAuth();
   
   // Story creation states
   const [createStoryModalVisible, setCreateStoryModalVisible] = useState(false);
   const [newStory, setNewStory] = useState<CreateStoryType>({
-    type: 'image',
-    url: '',
-    duration: 5
+    image: '',
+    content: ''
   });
   const [storyImage, setStoryImage] = useState<string>('');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const { colors } = useThemeStyles();
+  const styles = createStyles(colors);
+
+  // Get token from storage
+  const getToken = async () => {
+    const realToken = await AsyncStorage.getItem('auth-token');
+    if (realToken) return realToken;
+    
+    console.log('No valid token found. Please login first.');
+    return null;
+  };
+
+  // Helper function to format time
+  const getTimeAgo = (date: Date) => {
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - new Date(date).getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  };
+
+  // Fetch current user data
+  const fetchCurrentUser = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/profile`, {
+        credentials: 'include',
+        headers: headers
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setCurrentUser(data.user);
+          return data.user;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching current user:', error);
+      return null;
+    }
+  };
+
+  // Fetch posts from API
+  const fetchPosts = async () => {
+    try {
+      if (!isAuthenticated) {
+        console.log('User not authenticated, redirecting to login...');
+        return;
+      }
+      
+      setLoading(true);
+      
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/posts`, {
+        credentials: 'include',
+        headers: headers
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // Transform API data to match component expectations
+        const transformedPosts: Post[] = data.posts.map((post: ApiPost) => ({
+          id: post._id,
+          _id: post._id,
+          username: post.user?.name?.toLowerCase().replace(/\s+/g, '') || 'user',
+          name: post.user?.name || 'User',
+          content: post.content,
+          likes: post.likes.length,
+          comments: post.comments.length,
+          time: getTimeAgo(post.createdAt),
+          userImage: post.user?.profilePicture || DEFAULT_AVATAR,
+          image: post.image,
+          isLiked: post.likes.some(like => like.userId === 'current-user-id'),
+          commentsList: post.comments.map(comment => ({
+            id: comment._id,
+            username: comment.user?.name?.toLowerCase().replace(/\s+/g, '') || 'user',
+            name: comment.user?.name || 'User',
+            comment: comment.content,
+            time: getTimeAgo(comment.createdAt)
+          }))
+        }));
+        
+        setPosts(transformedPosts);
+      } else {
+        throw new Error(data.message || 'Failed to load posts');
+      }
+    } catch (error) {
+      console.error('Error fetching posts:', error);
+      Alert.alert('Error', 'Failed to load posts from server.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch stories from API
+  const fetchStories = async () => {
+    try {
+      if (!isAuthenticated) {
+        console.log('User not authenticated, redirecting to login...');
+        return;
+      }
+      
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/stories`, {
+        credentials: 'include', 
+        headers: headers 
+      });
+      
+      let transformedStories: StoryType[] = [];
+      
+      // Always add current user's story (for creating new stories)
+      const user = await fetchCurrentUser();
+      if (user) {
+        const userStory: StoryType = {
+          id: 'current-user-story',
+          username: user.name?.toLowerCase().replace(/\s+/g, '') || 'user',
+          name: user.name || 'User',
+          avatar: user.profilePicture || DEFAULT_AVATAR,
+          hasNewStory: false,
+          isUser: true,
+          stories: []
+        };
+        transformedStories.push(userStory);
+      }
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.stories.length > 0) {
+          // Transform API stories and add them after user's story
+          const apiStories: StoryType[] = data.stories.map((story: ApiStory) => ({
+            id: story._id,
+            _id: story._id,
+            userId: story.userId,
+            username: story.user?.name?.toLowerCase().replace(/\s+/g, '') || 'user',
+            name: story.user?.name || 'User',
+            avatar: story.user?.profilePicture || DEFAULT_AVATAR,
+            hasNewStory: !story.seen,
+            isUser: false,
+            stories: [{
+              id: story._id,
+              type: 'image' as const,
+              url: story.image,
+              duration: 5,
+              seen: story.seen || false,
+              timestamp: getTimeAgo(story.createdAt)
+            }]
+          }));
+          
+          transformedStories = [...transformedStories, ...apiStories];
+        }
+      }
+      
+      setStories(transformedStories);
+    } catch (error) {
+      console.error('Error fetching stories:', error);
+      
+      // Even if API fails, show current user's story
+      const user = await fetchCurrentUser();
+      if (user) {
+        const userStory: StoryType = {
+          id: 'current-user-story',
+          username: user.name?.toLowerCase().replace(/\s+/g, '') || 'user',
+          name: user.name || 'User',
+          avatar: user.profilePicture || DEFAULT_AVATAR,
+          hasNewStory: false,
+          isUser: true,
+          stories: []
+        };
+        setStories([userStory]);
+      }
+    }
+  };
+
+  // Ensure current user is always shown in stories
+  useEffect(() => {
+    const ensureCurrentUserStory = async () => {
+      if (stories.length === 0 || !stories.some(story => story.isUser)) {
+        const user = await fetchCurrentUser();
+        if (user) {
+          const userStory: StoryType = {
+            id: 'current-user-story',
+            username: user.name?.toLowerCase().replace(/\s+/g, '') || 'user',
+            name: user.name || 'User',
+            avatar: user.profilePicture || DEFAULT_AVATAR,
+            hasNewStory: false,
+            isUser: true,
+            stories: []
+          };
+          setStories(prev => [userStory, ...prev.filter(story => !story.isUser)]);
+        }
+      }
+    };
+    
+    ensureCurrentUserStory();
+  }, [stories]);
+
+  // Fetch data on component mount
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchPosts();
+      fetchStories();
+       const interval = setInterval(() => {
+      fetchPosts(); // This will fetch new posts
+    }, 30000);
+    
+    return () => clearInterval(interval); // Cleanup on unmount
+  }
+    
+  }, [isAuthenticated]);
+
+  // Enhanced Story Functions
   const openStory = (story: StoryType, storyIndex: number = 0) => {
-    setCurrentStory({ story, index: storyIndex });
+    // If user clicks on their own empty story, open creation modal
+    if (story.isUser && story.stories.length === 0) {
+      setCreateStoryModalVisible(true);
+      return;
+    }
+    
+    // If story has no content, don't open viewer
+    if (story.stories.length === 0) {
+      Alert.alert('No Story', 'This user has no active stories.');
+      return;
+    }
+    
+    setCurrentStory(story);
     setCurrentStoryIndex(storyIndex);
     setProgress(0);
     setStoryModalVisible(true);
@@ -1261,31 +889,42 @@ export default function HomeScreen() {
     // Mark story as seen
     setStories(prev => prev.map(s => 
       s.id === story.id 
-        ? {
-            ...s,
-            stories: s.stories.map((st, idx) => 
-              idx === storyIndex ? { ...st, seen: true } : st
-            ),
-            hasNewStory: s.stories.some(st => !st.seen)
-          }
+        ? { ...s, hasNewStory: false, stories: s.stories.map(st => ({ ...st, seen: true })) }
         : s
     ));
+
+    // Hide status bar for full screen experience
+    if (Platform.OS !== 'web') {
+      StatusBar.setHidden(true);
+    }
+  };
+
+  const closeStory = () => {
+    setStoryModalVisible(false);
+    setCurrentStory(null);
+    setCurrentStoryIndex(0);
+    
+    // Show status bar again
+    if (Platform.OS !== 'web') {
+      StatusBar.setHidden(false);
+    }
   };
 
   const nextStory = () => {
     if (!currentStory) return;
     
     const nextIndex = currentStoryIndex + 1;
-    if (nextIndex < currentStory.story.stories.length) {
+    if (nextIndex < currentStory.stories.length) {
       setCurrentStoryIndex(nextIndex);
       setProgress(0);
     } else {
-      // Move to next user's story
-      const currentIndex = stories.findIndex(s => s.id === currentStory.story.id);
-      if (currentIndex < stories.length - 1) {
-        openStory(stories[currentIndex + 1], 0);
+      // Move to next user
+      const currentUserIndex = stories.findIndex(s => s.id === currentStory.id);
+      if (currentUserIndex < stories.length - 1) {
+        const nextUser = stories[currentUserIndex + 1];
+        openStory(nextUser, 0);
       } else {
-        setStoryModalVisible(false);
+        closeStory();
       }
     }
   };
@@ -1298,11 +937,12 @@ export default function HomeScreen() {
       setCurrentStoryIndex(prevIndex);
       setProgress(0);
     } else {
-      // Move to previous user's story
-      const currentIndex = stories.findIndex(s => s.id === currentStory.story.id);
-      if (currentIndex > 0) {
-        const prevUserStories = stories[currentIndex - 1].stories;
-        openStory(stories[currentIndex - 1], prevUserStories.length - 1);
+      // Move to previous user
+      const currentUserIndex = stories.findIndex(s => s.id === currentStory.id);
+      if (currentUserIndex > 0) {
+        const prevUser = stories[currentUserIndex - 1];
+        const prevUserStories = prevUser.stories;
+        openStory(prevUser, prevUserStories.length - 1);
       }
     }
   };
@@ -1311,7 +951,8 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!storyModalVisible || !currentStory) return;
     
-    const duration = currentStory.story.stories[currentStoryIndex].duration * 1000;
+    const currentStoryItem = currentStory.stories[currentStoryIndex];
+    const duration = currentStoryItem.duration * 1000;
     const interval = 50;
     const steps = duration / interval;
     const increment = 100 / steps;
@@ -1331,94 +972,108 @@ export default function HomeScreen() {
   }, [storyModalVisible, currentStory, currentStoryIndex]);
 
   // Story creation functions
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const imageUrl = e.target?.result as string;
-        setStoryImage(imageUrl);
-        setNewStory(prev => ({ ...prev, url: imageUrl }));
-      };
-      reader.readAsDataURL(file);
+  const handleImageUpload = async (event: any) => {
+    if (Platform.OS === 'web') {
+      const file = event.target.files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const imageUrl = e.target?.result as string;
+          setStoryImage(imageUrl);
+          setNewStory(prev => ({ ...prev, image: imageUrl }));
+        };
+        reader.readAsDataURL(file);
+      }
+    } else {
+      // For React Native, you'd use expo-image-picker here
+      Alert.alert('Info', 'Image picker would open here in mobile app');
     }
   };
 
-  const createNewStory = () => {
-    if (!newStory.url.trim()) {
+  const createNewStory = async () => {
+    if (!newStory.image.trim()) {
       Alert.alert('Error', 'Please select an image for your story');
       return;
     }
 
-    const newStoryItem = {
-      id: Date.now().toString(),
-      type: 'image' as const,
-      url: newStory.url,
-      duration: newStory.duration,
-      seen: false,
-      timestamp: 'Just now'
-    };
+    try {
+       const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/stories`, {
+        method: 'POST',
+        credentials: 'include', // This sends cookies automatically
+      headers:  headers, // Get proper auth headers from context
+        body: JSON.stringify(newStory)
+      });
 
-    setStories(prev => prev.map(story => 
-      story.isUser 
-        ? {
-            ...story,
-            hasNewStory: true,
-            stories: [newStoryItem, ...story.stories]
-          }
-        : story
-    ));
-
-    setCreateStoryModalVisible(false);
-    setNewStory({ type: 'image', url: '', duration: 5 });
-    setStoryImage('');
-    Alert.alert('Success', 'Your story has been posted!');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Refresh stories
+          fetchStories();
+          setCreateStoryModalVisible(false);
+          setNewStory({ image: '', content: '' });
+          setStoryImage('');
+          Alert.alert('Success', 'Your story has been posted!');
+        }
+      } else {
+        throw new Error('Failed to create story');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to post story. Please try again.');
+    }
   };
 
-  // Enhanced story render function
+  // Enhanced Story Renderer
   const renderStory = ({ item }: { item: StoryType }) => (
     <TouchableOpacity 
       style={styles.storyContainer}
       onPress={() => openStory(item, 0)}
     >
       <View style={[
-        styles.storyCircleLarge,
-        item.hasNewStory && styles.hasNewStory,
-        item.isUser && styles.userStory
+        styles.storyCircle,
+        item.hasNewStory ? styles.hasNewStory : styles.seenStory,
+        item.stories.length === 0 && styles.seenStory // Empty stories show as seen
       ]}>
         <Image 
           source={{ uri: item.avatar }} 
-          style={styles.storyImageLarge}
+          style={styles.storyImage}
         />
         {item.isUser && (
-          <View style={styles.addStoryButton}>
+          <TouchableOpacity 
+            style={styles.addStoryButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              setCreateStoryModalVisible(true);
+            }}
+          >
             <Text style={styles.addStoryText}>+</Text>
-          </View>
+          </TouchableOpacity>
         )}
       </View>
       <Text style={styles.storyUsername} numberOfLines={1}>
-        {item.isUser ? 'Your Story' : item.username}
+        {item.isUser ? 'Your Story' : item.name}
       </Text>
     </TouchableOpacity>
   );
 
-  // Story Preview Modal
-  const renderStoryPreview = () => {
+  // Full Screen Story Viewer
+  const renderFullScreenStory = () => {
     if (!currentStory) return null;
     
-    const currentStoryItem = currentStory.story.stories[currentStoryIndex];
+    const currentStoryItem = currentStory.stories[currentStoryIndex];
     
     return (
       <Modal
         visible={storyModalVisible}
         animationType="fade"
-        transparent={true}
-        onRequestClose={() => setStoryModalVisible(false)}
+        transparent={false}
+        statusBarTranslucent={true}
+        onRequestClose={closeStory}
       >
-        <View style={styles.storyPreviewContainer}>
+        <View style={styles.fullScreenStoryContainer}>
           {/* Progress Bars */}
           <View style={styles.progressBarContainer}>
-            {currentStory.story.stories.map((_, index) => (
+            {currentStory.stories.map((_, index) => (
               <View key={index} style={styles.progressBar}>
                 <View 
                   style={[
@@ -1437,20 +1092,20 @@ export default function HomeScreen() {
           {/* Story Header */}
           <View style={styles.storyHeader}>
             <Image 
-              source={{ uri: currentStory.story.avatar }} 
+              source={{ uri: currentStory.avatar }} 
               style={styles.storyAvatar}
             />
-            <View>
-              <Text style={styles.storyUsername}>{currentStory.story.name}</Text>
+            <View style={styles.storyUserInfo}>
+              <Text style={styles.storyName}>{currentStory.name}</Text>
               <Text style={styles.storyTime}>{currentStoryItem.timestamp}</Text>
             </View>
           </View>
 
-          {/* Story Content */}
+          {/* Story Content - Full Screen */}
           <Image 
             source={{ uri: currentStoryItem.url }} 
             style={styles.storyContent}
-            resizeMode="contain"
+            resizeMode="cover"
           />
 
           {/* Navigation Areas */}
@@ -1466,10 +1121,23 @@ export default function HomeScreen() {
           {/* Close Button */}
           <TouchableOpacity 
             style={styles.closeButton}
-            onPress={() => setStoryModalVisible(false)}
+            onPress={closeStory}
           >
             <Text style={styles.closeButtonText}>×</Text>
           </TouchableOpacity>
+
+          {/* Action Buttons */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity style={styles.actionButton}>
+              <Text style={styles.actionButtonText}>❤️</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionButton}>
+              <Text style={styles.actionButtonText}>💬</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionButton}>
+              <Text style={styles.actionButtonText}>📤</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     );
@@ -1488,20 +1156,33 @@ export default function HomeScreen() {
           <Text style={styles.createStoryTitle}>Create New Story</Text>
           
           {/* Image Upload */}
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleImageUpload}
-            style={{ display: 'none' }}
-            id="story-upload"
-          />
-          <label htmlFor="story-upload">
-            <View style={styles.fileInput}>
+          {Platform.OS === 'web' ? (
+            <>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                style={{ display: 'none' }}
+                id="story-upload"
+              />
+              <label htmlFor="story-upload">
+                <View style={styles.fileInput}>
+                  <Text style={styles.fileInputText}>
+                    {storyImage ? 'Change Image' : 'Choose Image'}
+                  </Text>
+                </View>
+              </label>
+            </>
+          ) : (
+            <TouchableOpacity 
+              style={styles.fileInput}
+              onPress={() => Alert.alert('Info', 'Image picker would open here')}
+            >
               <Text style={styles.fileInputText}>
                 {storyImage ? 'Change Image' : 'Choose Image'}
               </Text>
-            </View>
-          </label>
+            </TouchableOpacity>
+          )}
 
           {/* Image Preview */}
           {storyImage && (
@@ -1512,20 +1193,14 @@ export default function HomeScreen() {
             />
           )}
 
-          {/* Duration Input */}
+          {/* Content Input */}
           <TextInput
             style={styles.storyInput}
-            placeholder="Duration in seconds (5-10)"
-            value={newStory.duration.toString()}
-            onChangeText={(text) => {
-              const duration = parseInt(text) || 5;
-              setNewStory(prev => ({ 
-                ...prev, 
-                duration: Math.min(Math.max(duration, 3), 10) 
-              }));
-            }}
-            keyboardType="numeric"
+            placeholder="Add a caption (optional)"
+            value={newStory.content}
+            onChangeText={(text) => setNewStory(prev => ({ ...prev, content: text }))}
             placeholderTextColor={colors.textSecondary}
+            multiline
           />
 
           {/* Buttons */}
@@ -1549,40 +1224,80 @@ export default function HomeScreen() {
     </Modal>
   );
 
-  const likePost = (postId: string) => {
-    setPosts(posts.map(post => {
-      if (post.id === postId) {
-        const wasLiked = post.isLiked;
-        return { 
-          ...post, 
-          likes: wasLiked ? post.likes - 1 : post.likes + 1,
-          isLiked: !wasLiked
-        };
+  // Post Functions
+  const likePost = async (postId: string) => {
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API_BASE_URL}/posts/${postId}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Update local state
+          setPosts(posts.map(post => {
+            if (post._id === postId) {
+              const wasLiked = post.isLiked;
+              return { 
+                ...post, 
+                likes: wasLiked ? post.likes - 1 : post.likes + 1,
+                isLiked: !wasLiked
+              };
+            }
+            return post;
+          }));
+        }
       }
-      return post;
-    }));
+    } catch (error) {
+      console.error('Error liking post:', error);
+    }
   };
 
-  const addComment = (postId: string) => {
-    if (newComment.trim()) {
-      setPosts(posts.map(post => {
-        if (post.id === postId) {
-          return {
-            ...post,
-            comments: post.comments + 1,
-            commentsList: [...post.commentsList, {
-              id: Date.now().toString(),
-              username: 'currentuser',
-              name: 'You',
-              comment: newComment,
-              time: 'Just now'
-            }]
-          };
+  const addComment = async (postId: string) => {
+    if (!newComment.trim()) return;
+
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API_BASE_URL}/posts/${postId}/comment`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ content: newComment })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Update local state
+          setPosts(posts.map(post => {
+            if (post._id === postId) {
+              return {
+                ...post,
+                comments: post.comments + 1,
+                commentsList: [...post.commentsList, {
+                  id: data.comment._id,
+                  username: 'currentuser',
+                  name: 'You',
+                  comment: newComment,
+                  time: 'Just now'
+                }]
+              };
+            }
+            return post;
+          }));
+          setNewComment('');
+          setCommentModalVisible(false);
         }
-        return post;
-      }));
-      setNewComment('');
-      setCommentModalVisible(false);
+      }
+    } catch (error) {
+      console.error('Error adding comment:', error);
     }
   };
 
@@ -1590,43 +1305,38 @@ export default function HomeScreen() {
     const postLink = `https://socialapp.com/post/${post.id}`;
     
     if (Platform.OS === 'web') {
-      // For web - use clipboard
       navigator.clipboard.writeText(postLink);
       Alert.alert('Link Copied!', 'Post link has been copied to clipboard.');
     } else {
-      // For mobile - use sharing
       try {
         await Sharing.shareAsync(postLink);
       } catch (error) {
-        // Fallback to clipboard if sharing fails
-        Clipboard.setString(postLink);
+        Clipboard.setStringAsync(postLink);
         Alert.alert('Link Copied!', 'Post link has been copied to clipboard.');
       }
     }
   };
 
-const downloadImage = async (post: Post | null) => {
-  if (!post?.image) {
-    Alert.alert('No Image', 'This post does not contain an image to download.');
-    return;
-  }
-
-  try {
-    // Just share the image URL directly
-    if (Platform.OS === 'web') {
-      // For web - open image in new tab
-      window.open(post.image, '_blank');
-      Alert.alert('Image Opened', 'Image opened in new tab. Right-click to save.');
-    } else {
-      // For mobile - use sharing
-      await Sharing.shareAsync(post.image);
+  const downloadImage = async (post: Post | null) => {
+    if (!post?.image) {
+      Alert.alert('No Image', 'This post does not contain an image to download.');
+      return;
     }
-  } catch (error) {
-    Alert.alert('Error', 'Failed to open image. Please try again.');
-  }
-  
-  setOptionsModalVisible(false);
-};
+
+    try {
+      if (Platform.OS === 'web') {
+        window.open(post.image, '_blank');
+        Alert.alert('Image Opened', 'Image opened in new tab. Right-click to save.');
+      } else {
+        await Sharing.shareAsync(post.image);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to open image. Please try again.');
+    }
+    
+    setOptionsModalVisible(false);
+  };
+
   const openComments = (post: Post) => {
     setSelectedPost(post);
     setCommentModalVisible(true);
@@ -1636,7 +1346,6 @@ const downloadImage = async (post: Post | null) => {
     setSelectedPostForOptions(post);
     setOptionsModalVisible(true);
   };
- const styles = createStyles(colors);
 
   const renderPost = ({ item }: { item: Post }) => (
     <View style={styles.post}>
@@ -1666,7 +1375,7 @@ const downloadImage = async (post: Post | null) => {
       
       <View style={styles.postActions}>
         <TouchableOpacity 
-          onPress={() => likePost(item.id)} 
+          onPress={() => likePost(item._id || item.id)} 
           style={styles.action}
         >
           <Text style={[
@@ -1701,7 +1410,7 @@ const downloadImage = async (post: Post | null) => {
   const HeaderComponent = () => (
     <View style={styles.header}>
       {/* Stories Section */}
-           <View style={styles.storiesSection}>
+      <View style={styles.storiesSection}>
         <FlatList
           data={stories}
           renderItem={renderStory}
@@ -1710,27 +1419,25 @@ const downloadImage = async (post: Post | null) => {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.storiesList}
         />
-        
-        {/* Create Story Button */}
-        <TouchableOpacity 
-          style={styles.createStoryButton}
-          onPress={() => setCreateStoryModalVisible(true)}
-        >
-          <Text style={styles.createStoryText}>+ Create Story</Text>
-        </TouchableOpacity>
       </View>
-
-      {/* Divider */}
-      <View style={styles.divider} />
     </View>
   );
 
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading posts...</Text>
+      </View>
+    );
+  }
+
   return (
-    
     <View style={styles.container}>
       <View style={styles.appHeader}>
         <Text style={styles.appTitle}>SmartConnect</Text>
       </View>
+      
       <FlatList
         data={posts}
         renderItem={renderPost}
@@ -1738,9 +1445,14 @@ const downloadImage = async (post: Post | null) => {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={HeaderComponent}
         contentContainerStyle={styles.listContent}
+        refreshing={loading}
+        onRefresh={fetchPosts}
       />
- {renderStoryPreview()}
+      
+      {/* Story Modals */}
+      {renderFullScreenStory()}
       {renderCreateStoryModal()}
+      
       {/* Comments Modal */}
       <Modal
         visible={commentModalVisible}
@@ -1754,7 +1466,6 @@ const downloadImage = async (post: Post | null) => {
               <Text style={styles.modalTitle}>Comments</Text>
               <TouchableOpacity 
                 onPress={() => setCommentModalVisible(false)}
-                style={styles.closeButton}
               >
                 <Text style={styles.closeButtonText}>×</Text>
               </TouchableOpacity>
@@ -1789,7 +1500,7 @@ const downloadImage = async (post: Post | null) => {
                   styles.commentSubmitButton,
                   !newComment.trim() && styles.commentSubmitDisabled
                 ]}
-                onPress={() => selectedPost && addComment(selectedPost.id)}
+                onPress={() => selectedPost && addComment(selectedPost._id || selectedPost.id)}
                 disabled={!newComment.trim()}
               >
                 <Text style={styles.commentSubmitText}>Post</Text>
@@ -1850,4 +1561,3 @@ const downloadImage = async (post: Post | null) => {
     </View>
   );
 }
- 

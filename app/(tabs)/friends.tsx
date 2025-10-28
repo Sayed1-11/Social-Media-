@@ -1,7 +1,12 @@
+import { useThemeStyles } from '@/hooks/useThemeStyles';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Image,
+  Modal,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -10,184 +15,383 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useAuth } from '../context/AuthContext';
+
+const API_BASE_URL = 'http://localhost:3000';
+
+type User = {
+  _id: string;
+  name: string;
+  email: string;
+  username: string;
+  profilePicture?: string;
+};
+
+type FriendRequest = {
+  _id: string;
+  requesterId: string;
+  recipientId: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+  requester?: User;
+  recipient?: User;
+};
+
+type Friend = {
+  _id: string;
+  user: User;
+  isOnline?: boolean;
+};
 
 export default function FriendsScreen() {
-  const [activeTab, setActiveTab] = useState('friends');
+  const [activeTab, setActiveTab] = useState<'friends' | 'requests'>('friends');
   const [searchQuery, setSearchQuery] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+  const [newFriendUsername, setNewFriendUsername] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [searching, setSearching] = useState(false);
+  
+  const { colors, isDark } = useThemeStyles();
+  const { getAuthHeaders, user } = useAuth();
 
-  // Mock data for friend requests with images
-  const [friendRequests, setFriendRequests] = useState([
-    {
-      id: '1',
-      name: 'Sarah Johnson',
-      username: 'sarahj',
-      mutualFriends: 4,
-      time: '5 min ago',
-      avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face',
-    },
-    {
-      id: '2',
-      name: 'Mike Chen',
-      username: 'mikecoder',
-      mutualFriends: 8,
-      time: '1 hour ago',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
-    },
-    {
-      id: '3',
-      name: 'David Kim',
-      username: 'davidk',
-      mutualFriends: 2,
-      time: '1 day ago',
-      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-    },
-    {
-      id: '4',
-      name: 'Emma Davis',
-      username: 'emmad',
-      mutualFriends: 6,
-      time: '2 days ago',
-      avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face',
-    },
-  ]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [friends, setFriends] = useState<Friend[]>([]);
 
-  // Mock data for current friends with images
-  const [friends, setFriends] = useState([
-    {
-      id: '1',
-      name: 'Alex Thompson',
-      username: 'alexthompson',
-      isOnline: true,
-      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face',
-    },
-    {
-      id: '2',
-      name: 'Emma Wilson',
-      username: 'emmaw',
-      isOnline: false,
-      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&h=150&fit=crop&crop=face',
-    },
-    {
-      id: '3',
-      name: 'James Rodriguez',
-      username: 'jamesr',
-      isOnline: true,
-      avatar: 'https://images.unsplash.com/photo-1519244703995-f4e0f30006d5?w=150&h=150&fit=crop&crop=face',
-    },
-    {
-      id: '4',
-      name: 'Lisa Park',
-      username: 'lisap',
-      isOnline: false,
-      avatar: 'https://images.unsplash.com/photo-1534751516642-a1af1ef26a56?w=150&h=150&fit=crop&crop=face',
-    },
-    {
-      id: '5',
-      name: 'Marcus Brown',
-      username: 'marcusb',
-      isOnline: true,
-      avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&h=150&fit=crop&crop=face',
-    },
-    {
-      id: '6',
-      name: 'Sophia Lee',
-      username: 'sophial',
-      isOnline: true,
-      avatar: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=150&h=150&fit=crop&crop=face',
-    },
-    {
-      id: '7',
-      name: 'Ryan Cooper',
-      username: 'ryanc',
-      isOnline: false,
-      avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&h=150&fit=crop&crop=face',
-    },
-    {
-      id: '8',
-      name: 'Olivia Martinez',
-      username: 'oliviam',
-      isOnline: true,
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&h=150&fit=crop&crop=face',
-    },
-  ]);
+  const styles = createStyles(colors);
 
-  const handleAcceptRequest = (id: string) => {
-    const request = friendRequests.find(req => req.id === id);
-    if (request) {
-      setFriendRequests(prev => prev.filter(req => req.id !== id));
-      setFriends(prev => [...prev, {
-        id: id,
-        name: request.name,
-        username: request.username,
-        isOnline: false,
-        avatar: request.avatar,
-      }]);
+  // Load initial data
+  useEffect(() => {
+    loadFriendRequests();
+    loadFriends();
+  }, []);
+
+  // Search users when query changes
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      searchUsers();
+    } else {
+      setSearchResults([]);
+    }
+  }, [searchQuery]);
+
+  const loadFriendRequests = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/friends/requests`, {
+        headers,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setFriendRequests(data.requests || []);
+      }
+    } catch (error) {
+      console.error('Error loading friend requests:', error);
+      Alert.alert('Error', 'Failed to load friend requests');
     }
   };
 
-  const handleDeclineRequest = (id: string) => {
-    setFriendRequests(prev => prev.filter(req => req.id !== id));
+  const loadFriends = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/friends`, {
+        headers,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setFriends(data.friends || []);
+      }
+    } catch (error) {
+      console.error('Error loading friends:', error);
+      Alert.alert('Error', 'Failed to load friends');
+    }
   };
 
-  const renderFriendRequest = (request: any) => (
-    <View key={request.id} style={styles.requestItem}>
-      <View style={styles.requestLeft}>
-        <View style={styles.avatarContainer}>
-          <Image 
-            source={{ uri: request.avatar }} 
-            style={styles.avatar}
-          />
-        </View>
-        <View style={styles.requestInfo}>
-          <Text style={styles.requestName}>{request.name}</Text>
-          <Text style={styles.requestUsername}>@{request.username}</Text>
-          <Text style={styles.mutualFriends}>
-            {request.mutualFriends} mutual friends
-          </Text>
-          <Text style={styles.requestTime}>{request.time}</Text>
-        </View>
-      </View>
-      
-      <View style={styles.requestActions}>
-        <TouchableOpacity 
-          style={styles.acceptButton}
-          onPress={() => handleAcceptRequest(request.id)}
-        >
-          <Text style={styles.acceptButtonText}>Accept</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.declineButton}
-          onPress={() => handleDeclineRequest(request.id)}
-        >
-          <Text style={styles.declineButtonText}>Decline</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  const searchUsers = async () => {
+    try {
+      setSearching(true);
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/users/search?q=${encodeURIComponent(searchQuery)}`, {
+        headers,
+      });
 
-  const renderFriend = (friend: any) => (
-    <TouchableOpacity key={friend.id} style={styles.friendItem}>
+      if (response.ok) {
+        const data = await response.json();
+        setSearchResults(data.users || []);
+      }
+    } catch (error) {
+      console.error('Error searching users:', error);
+      Alert.alert('Error', 'Failed to search users');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const sendFriendRequest = async (friendId: string) => {
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/friends/${friendId}`, {
+        method: 'POST',
+        headers,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        Alert.alert('Success', 'Friend request sent successfully');
+        setSearchResults(prev => prev.filter(user => user._id !== friendId));
+      } else {
+        Alert.alert('Error', data.message || 'Failed to send friend request');
+      }
+    } catch (error) {
+      console.error('Error sending friend request:', error);
+      Alert.alert('Error', 'Failed to send friend request');
+    }
+  };
+
+  const handleAcceptRequest = async (requestId: string) => {
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/friends/${requestId}`, {
+        method: 'PUT',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'accept' }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        Alert.alert('Success', 'Friend request accepted');
+        setFriendRequests(prev => prev.filter(req => req._id !== requestId));
+        loadFriends(); // Reload friends list
+      } else {
+        Alert.alert('Error', data.message || 'Failed to accept friend request');
+      }
+    } catch (error) {
+      console.error('Error accepting friend request:', error);
+      Alert.alert('Error', 'Failed to accept friend request');
+    }
+  };
+
+  const handleDeclineRequest = async (requestId: string) => {
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/friends/${requestId}`, {
+        method: 'PUT',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'reject' }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        Alert.alert('Success', 'Friend request declined');
+        setFriendRequests(prev => prev.filter(req => req._id !== requestId));
+      } else {
+        Alert.alert('Error', data.message || 'Failed to decline friend request');
+      }
+    } catch (error) {
+      console.error('Error declining friend request:', error);
+      Alert.alert('Error', 'Failed to decline friend request');
+    }
+  };
+
+  const handleRemoveFriend = async (friendId: string) => {
+    Alert.alert(
+      'Remove Friend',
+      'Are you sure you want to remove this friend?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const headers = await getAuthHeaders();
+              const response = await fetch(`${API_BASE_URL}/friends/${friendId}`, {
+                method: 'DELETE',
+                headers,
+              });
+
+              const data = await response.json();
+
+              if (response.ok) {
+                Alert.alert('Success', 'Friend removed successfully');
+                setFriends(prev => prev.filter(friend => friend.user._id !== friendId));
+              } else {
+                Alert.alert('Error', data.message || 'Failed to remove friend');
+              }
+            } catch (error) {
+              console.error('Error removing friend:', error);
+              Alert.alert('Error', 'Failed to remove friend');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([loadFriendRequests(), loadFriends()]);
+    setRefreshing(false);
+  };
+
+  const renderFriendRequest = (request: FriendRequest) => {
+    const requester = request.requester;
+    if (!requester) return null;
+
+    return (
+      <View key={request._id} style={styles.requestItem}>
+        <View style={styles.requestLeft}>
+          <View style={styles.avatarContainer}>
+            <Image 
+              source={{ uri: requester.profilePicture || 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face' }} 
+              style={styles.avatar}
+            />
+          </View>
+          <View style={styles.requestInfo}>
+            <Text style={styles.requestName}>{requester.name}</Text>
+            <Text style={styles.requestUsername}>@{requester.username}</Text>
+            <Text style={styles.requestTime}>
+              {new Date(request.createdAt).toLocaleDateString()}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.requestActions}>
+          <TouchableOpacity 
+            style={styles.acceptButton}
+            onPress={() => handleAcceptRequest(request._id)}
+          >
+            <Text style={styles.acceptButtonText}>Accept</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.declineButton}
+            onPress={() => handleDeclineRequest(request._id)}
+          >
+            <Text style={styles.declineButtonText}>Decline</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const renderFriend = (friend: Friend) => (
+    <TouchableOpacity key={friend._id} style={styles.friendItem}>
       <View style={styles.friendLeft}>
         <View style={styles.avatarContainer}>
           <Image 
-            source={{ uri: friend.avatar }} 
+            source={{ uri: friend.user.profilePicture || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face' }} 
             style={styles.avatar}
           />
           {friend.isOnline && <View style={styles.onlineIndicator} />}
         </View>
         <View style={styles.friendInfo}>
-          <Text style={styles.friendName}>{friend.name}</Text>
-          <Text style={styles.friendUsername}>@{friend.username}</Text>
-          <Text style={styles.friendStatus}>
+          <Text style={styles.friendName}>{friend.user.name}</Text>
+          <Text style={styles.friendUsername}>@{friend.user.username}</Text>
+          <Text style={[styles.friendStatus, { color: friend.isOnline ? colors.success : colors.textSecondary }]}>
             {friend.isOnline ? 'Online now' : 'Last seen 2h ago'}
           </Text>
         </View>
       </View>
       
-      <TouchableOpacity style={styles.messageButton}>
-        <Ionicons name="chatbubble-outline" size={20} color="#666" />
+      <View style={styles.friendActions}>
+        <TouchableOpacity style={styles.messageButton}>
+          <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.moreButton}
+          onPress={() => handleRemoveFriend(friend.user._id)}
+        >
+          <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderSearchResult = (user: User) => (
+    <TouchableOpacity key={user._id} style={styles.searchResultItem}>
+      <View style={styles.friendLeft}>
+        <View style={styles.avatarContainer}>
+          <Image 
+            source={{ uri: user.profilePicture || 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face' }} 
+            style={styles.avatar}
+          />
+        </View>
+        <View style={styles.friendInfo}>
+          <Text style={styles.friendName}>{user.name}</Text>
+          <Text style={styles.friendUsername}>@{user.username}</Text>
+        </View>
+      </View>
+      <TouchableOpacity 
+        style={styles.addFriendButton}
+        onPress={() => sendFriendRequest(user._id)}
+      >
+        <Ionicons name="person-add-outline" size={20} color={colors.primary} />
       </TouchableOpacity>
     </TouchableOpacity>
+  );
+
+  const renderAddFriendModal = () => (
+    <Modal
+      visible={showAddFriendModal}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setShowAddFriendModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Add Friend</Text>
+            <TouchableOpacity onPress={() => setShowAddFriendModal(false)}>
+              <Ionicons name="close" size={24} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          
+          <Text style={styles.modalDescription}>
+            Search for users by username or email
+          </Text>
+          
+          <TextInput
+            style={styles.modalInput}
+            placeholder="Enter username or email..."
+            placeholderTextColor={colors.textSecondary}
+            value={newFriendUsername}
+            onChangeText={setNewFriendUsername}
+            autoCapitalize="none"
+          />
+          
+          <View style={styles.modalButtons}>
+            <TouchableOpacity 
+              style={styles.cancelButton}
+              onPress={() => setShowAddFriendModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.sendButton, !newFriendUsername.trim() && styles.disabledButton]}
+              onPress={() => {
+                setSearchQuery(newFriendUsername);
+                setShowAddFriendModal(false);
+              }}
+              disabled={!newFriendUsername.trim()}
+            >
+              <Text style={styles.sendButtonText}>Search</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 
   return (
@@ -195,59 +399,90 @@ export default function FriendsScreen() {
       <ScrollView 
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.text}
+          />
+        }
       >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Friends</Text>
-          <TouchableOpacity style={styles.addButton}>
+          <TouchableOpacity 
+            style={styles.addButton}
+            onPress={() => setShowAddFriendModal(true)}
+          >
             <Ionicons name="person-add-outline" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
 
         {/* Search Bar */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={20} color="#666" style={styles.searchIcon} />
+          <Ionicons name="search-outline" size={20} color={colors.textSecondary} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search friends..."
-            placeholderTextColor="#666"
+            placeholderTextColor={colors.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          {searching && <ActivityIndicator size="small" color={colors.primary} />}
         </View>
+
+        {/* Search Results */}
+        {searchResults.length > 0 && (
+          <View style={styles.searchResultsSection}>
+            <Text style={styles.sectionTitle}>Search Results</Text>
+            {searchResults.map(renderSearchResult)}
+          </View>
+        )}
 
         {/* Tab Bar */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'friends' && styles.activeTab]}
-            onPress={() => setActiveTab('friends')}
-          >
-            <Text style={[styles.tabText, activeTab === 'friends' && styles.activeTabText]}>
-              Friends
-            </Text>
-            {activeTab === 'friends' && <View style={styles.tabIndicator} />}
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'requests' && styles.activeTab]}
-            onPress={() => setActiveTab('requests')}
-          >
-            <View style={styles.tabWithBadge}>
-              <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>
-                Requests
+        {!searchQuery && (
+          <View style={styles.tabContainer}>
+            <TouchableOpacity 
+              style={[styles.tab, activeTab === 'friends' && styles.activeTab]}
+              onPress={() => setActiveTab('friends')}
+            >
+              <Text style={[styles.tabText, activeTab === 'friends' && styles.activeTabText]}>
+                Friends ({friends.length})
               </Text>
-              {friendRequests.length > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{friendRequests.length}</Text>
-                </View>
-              )}
-            </View>
-            {activeTab === 'requests' && <View style={styles.tabIndicator} />}
-          </TouchableOpacity>
-        </View>
+              {activeTab === 'friends' && <View style={styles.tabIndicator} />}
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.tab, activeTab === 'requests' && styles.activeTab]}
+              onPress={() => setActiveTab('requests')}
+            >
+              <View style={styles.tabWithBadge}>
+                <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>
+                  Requests
+                </Text>
+                {friendRequests.length > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{friendRequests.length}</Text>
+                  </View>
+                )}
+              </View>
+              {activeTab === 'requests' && <View style={styles.tabIndicator} />}
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Content */}
-        {activeTab === 'requests' ? (
+        {searchQuery ? (
+          searchResults.length === 0 && !searching && (
+            <View style={styles.emptyState}>
+              <Ionicons name="search-outline" size={64} color={colors.textSecondary} />
+              <Text style={styles.emptyStateTitle}>No users found</Text>
+              <Text style={styles.emptyStateText}>
+                Try searching with different keywords
+              </Text>
+            </View>
+          )
+        ) : activeTab === 'requests' ? (
           <View style={styles.requestsSection}>
             <Text style={styles.sectionTitle}>
               Friend Requests ({friendRequests.length})
@@ -256,7 +491,7 @@ export default function FriendsScreen() {
               friendRequests.map(renderFriendRequest)
             ) : (
               <View style={styles.emptyState}>
-                <Ionicons name="people-outline" size={64} color="#666" />
+                <Ionicons name="people-outline" size={64} color={colors.textSecondary} />
                 <Text style={styles.emptyStateTitle}>No friend requests</Text>
                 <Text style={styles.emptyStateText}>
                   When you have friend requests, they'll appear here
@@ -270,23 +505,38 @@ export default function FriendsScreen() {
               <Text style={styles.sectionTitle}>
                 Your Friends ({friends.length})
               </Text>
-              <TouchableOpacity style={styles.sortButton}>
-                <Ionicons name="filter" size={20} color="#666" />
-                <Text style={styles.sortButtonText}>Sort</Text>
-              </TouchableOpacity>
             </View>
-            {friends.map(renderFriend)}
+            
+            {friends.length > 0 ? (
+              friends.map(renderFriend)
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons name="people-outline" size={64} color={colors.textSecondary} />
+                <Text style={styles.emptyStateTitle}>No friends yet</Text>
+                <Text style={styles.emptyStateText}>
+                  Start adding friends to see them here
+                </Text>
+                <TouchableOpacity 
+                  style={styles.addFriendCta}
+                  onPress={() => setShowAddFriendModal(true)}
+                >
+                  <Text style={styles.addFriendCtaText}>Add Your First Friend</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
+
+      {renderAddFriendModal()}
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: colors.background,
   },
   scrollView: {
     flex: 1,
@@ -300,7 +550,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   headerTitle: {
-    color: '#fff',
+    color: colors.text,
     fontSize: 32,
     fontWeight: 'bold',
   },
@@ -308,35 +558,52 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#111111',
+    backgroundColor: colors.surface,
     margin: 16,
     marginTop: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: colors.border,
   },
   searchIcon: {
     marginRight: 12,
   },
   searchInput: {
     flex: 1,
-    color: '#fff',
+    color: colors.text,
     fontSize: 16,
+  },
+  searchResultsSection: {
+    padding: 16,
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 12,
+  },
+  addFriendButton: {
+    padding: 8,
   },
   tabContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
+    borderBottomColor: colors.border,
   },
   tab: {
     flex: 1,
@@ -348,26 +615,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  activeTab: {
-    // Active state styling
-  },
+  activeTab: {},
   tabText: {
-    color: '#666',
+    color: colors.textSecondary,
     fontSize: 16,
     fontWeight: '600',
   },
   activeTabText: {
-    color: '#fff',
+    color: colors.text,
   },
   tabIndicator: {
     position: 'absolute',
     bottom: 0,
     width: '100%',
     height: 2,
-    backgroundColor: '#ff375f',
+    backgroundColor: colors.primary,
   },
   badge: {
-    backgroundColor: '#ff375f',
+    backgroundColor: colors.primary,
     borderRadius: 10,
     minWidth: 20,
     height: 20,
@@ -394,34 +659,19 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionTitle: {
-    color: '#fff',
+    color: colors.text,
     fontSize: 18,
     fontWeight: 'bold',
-  },
-  sortButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#111111',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#1a1a1a',
-  },
-  sortButtonText: {
-    color: '#666',
-    fontSize: 14,
-    marginLeft: 4,
   },
   requestItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#111111',
+    backgroundColor: colors.surface,
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: colors.border,
     marginBottom: 12,
   },
   requestLeft: {
@@ -445,31 +695,26 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
     borderWidth: 2,
-    borderColor: '#111111',
+    borderColor: colors.surface,
   },
   requestInfo: {
     flex: 1,
   },
   requestName: {
-    color: '#fff',
+    color: colors.text,
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 2,
   },
   requestUsername: {
-    color: '#666',
+    color: colors.textSecondary,
     fontSize: 14,
     marginBottom: 4,
   },
-  mutualFriends: {
-    color: '#ccc',
-    fontSize: 12,
-    marginBottom: 2,
-  },
   requestTime: {
-    color: '#666',
+    color: colors.textSecondary,
     fontSize: 12,
   },
   requestActions: {
@@ -477,7 +722,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   acceptButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -489,13 +734,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   declineButton: {
-    backgroundColor: '#333',
+    backgroundColor: colors.surface,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
   },
   declineButtonText: {
-    color: '#fff',
+    color: colors.text,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -503,11 +748,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#111111',
+    backgroundColor: colors.surface,
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: colors.border,
     marginBottom: 12,
   },
   friendLeft: {
@@ -519,22 +764,29 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   friendName: {
-    color: '#fff',
+    color: colors.text,
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 2,
   },
   friendUsername: {
-    color: '#666',
+    color: colors.textSecondary,
     fontSize: 14,
     marginBottom: 2,
   },
   friendStatus: {
-    color: '#4CAF50',
     fontSize: 12,
     fontWeight: '500',
   },
+  friendActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   messageButton: {
+    padding: 8,
+    marginRight: 8,
+  },
+  moreButton: {
     padding: 8,
   },
   emptyState: {
@@ -543,16 +795,103 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   emptyStateTitle: {
-    color: '#fff',
+    color: colors.text,
     fontSize: 18,
     fontWeight: 'bold',
     marginTop: 16,
     marginBottom: 8,
   },
   emptyStateText: {
-    color: '#666',
+    color: colors.textSecondary,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
+    marginBottom: 16,
+  },
+  addFriendCta: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  addFriendCtaText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 400,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  modalDescription: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  modalInput: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 12,
+    color: colors.text,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: colors.background,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  cancelButtonText: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  sendButton: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  disabledButton: {
+    backgroundColor: colors.border,
+  },
+  sendButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

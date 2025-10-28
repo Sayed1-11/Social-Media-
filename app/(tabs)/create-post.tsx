@@ -3,6 +3,7 @@ import * as Location from "expo-location";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Image,
@@ -17,254 +18,22 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
+import { useAuth } from '../context/AuthContext';
 
 // Emoji data
 const emojiCategories = [
   {
     category: "Smileys & People",
     emojis: [
-      "😀",
-      "😃",
-      "😄",
-      "😁",
-      "😆",
-      "😅",
-      "😂",
-      "🤣",
-      "😊",
-      "😇",
-      "🙂",
-      "🙃",
-      "😉",
-      "😌",
-      "😍",
-      "🥰",
-      "😘",
-      "😗",
-      "😙",
-      "😚",
-      "😋",
-      "😛",
-      "😝",
-      "😜",
-      "🤪",
-      "🤨",
-      "🧐",
-      "🤓",
-      "😎",
-      "🤩",
-      "🥳",
-      "😏",
-      "😒",
-      "😞",
-      "😔",
-      "😟",
-      "😕",
-      "🙁",
-      "☹️",
-      "😣",
-      "😖",
-      "😫",
-      "😩",
-      "🥺",
-      "😢",
-      "😭",
-      "😤",
-      "😠",
-      "😡",
-      "🤬",
-      "🤯",
-      "😳",
-      "🥵",
-      "🥶",
-      "😱",
-      "😨",
-      "😰",
-      "😥",
-      "😓",
-      "🤗",
-      "🤔",
-      "🤭",
-      "🤫",
-      "🤥",
-      "😶",
-      "😐",
-      "😑",
-      "😬",
-      "🙄",
-      "😯",
-      "😦",
-      "😧",
-      "😮",
-      "😲",
-      "🥱",
-      "😴",
-      "🤤",
-      "😪",
-      "😵",
-      "🤐",
-      "🥴",
-      "🤢",
-      "🤮",
-      "🤧",
-      "😷",
-      "🤒",
-      "🤕",
-      "🤑",
-      "🤠",
-      "😈",
-      "👿",
-      "👹",
-      "👺",
-      "🤡",
-      "💩",
-      "👻",
-      "💀",
-      "☠️",
-      "👽",
-      "👾",
-      "🤖",
-      "🎃",
-      "😺",
-      "😸",
-      "😹",
-      "😻",
-      "😼",
-      "😽",
-      "🙀",
-      "😿",
-      "😾",
+      "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇",
+      "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚",
     ],
   },
   {
     category: "Animals & Nature",
     emojis: [
-      "🐵",
-      "🐒",
-      "🦍",
-      "🦧",
-      "🐶",
-      "🐕",
-      "🦮",
-      "🐩",
-      "🐺",
-      "🦊",
-      "🦝",
-      "🐱",
-      "🐈",
-      "🦁",
-      "🐯",
-      "🐅",
-      "🐆",
-      "🐴",
-      "🐎",
-      "🦄",
-      "🦓",
-      "🦌",
-      "🐮",
-      "🐂",
-      "🐃",
-      "🐄",
-      "🐷",
-      "🐖",
-      "🐗",
-      "🐽",
-      "🐏",
-      "🐑",
-      "🐐",
-      "🐪",
-      "🐫",
-      "🦙",
-      "🦒",
-      "🐘",
-      "🦏",
-      "🦛",
-      "🐭",
-      "🐁",
-      "🐀",
-      "🐹",
-      "🐰",
-      "🐇",
-      "🐿️",
-      "🦔",
-      "🦇",
-      "🐻",
-      "🐨",
-      "🐼",
-      "🦥",
-      "🦦",
-      "🦨",
-      "🦘",
-      "🦡",
-      "🐾",
-      "🦃",
-      "🐔",
-      "🐓",
-      "🐣",
-      "🐤",
-      "🐥",
-      "🐦",
-      "🐧",
-      "🕊️",
-      "🦅",
-      "🦆",
-      "🦢",
-      "🦉",
-      "🦩",
-      "🦚",
-      "🦜",
-      "🐸",
-      "🐊",
-      "🐢",
-      "🦎",
-      "🐍",
-      "🐲",
-      "🐉",
-      "🦕",
-      "🦖",
-      "🐳",
-      "🐋",
-      "🐬",
-      "🐟",
-      "🐠",
-      "🐡",
-      "🦈",
-      "🐙",
-      "🐚",
-      "🐌",
-      "🦋",
-      "🐛",
-      "🐜",
-      "🐝",
-      "🐞",
-      "🦗",
-      "🕷️",
-      "🕸️",
-      "🦂",
-      "🦟",
-      "🦠",
-      "💐",
-      "🌸",
-      "💮",
-      "🏵️",
-      "🌹",
-      "🥀",
-      "🌺",
-      "🌻",
-      "🌼",
-      "🌷",
-      "🌱",
-      "🌲",
-      "🌳",
-      "🌴",
-      "🌵",
-      "🌾",
-      "🌿",
-      "☘️",
-      "🍀",
-      "🍁",
-      "🍂",
-      "🍃",
+      "🐵", "🐒", "🦍", "🐶", "🐕", "🐩", "🐺", "🦊", "🐱", "🐈",
+      "🦁", "🐯", "🐅", "🐆", "🐴", "🐎", "🦄", "🦓", "🦌", "🐮",
     ],
   },
 ];
@@ -285,81 +54,30 @@ const locationTypeIcons = {
 
 // Create a type for the location types
 type LocationType = keyof typeof locationTypeIcons;
+
 const popularLocations: { id: string; name: string; type: LocationType }[] = [
-  // Major Areas & Neighborhoods
   { id: '1', name: 'Dhaka, Bangladesh', type: 'city' },
   { id: '2', name: 'Gulshan', type: 'city' },
   { id: '3', name: 'Banani', type: 'city' },
   { id: '4', name: 'Dhanmondi', type: 'city' },
   { id: '5', name: 'Uttara', type: 'city' },
-  { id: '6', name: 'Bashundhara R/A', type: 'city' },
-  { id: '7', name: 'Mohakhali', type: 'city' },
-  { id: '8', name: 'Motijheel', type: 'city' },
-  { id: '9', name: 'Farmgate', type: 'city' },
-  { id: '10', name: 'Mirpur', type: 'city' },
-  
-  // Historical Landmarks
   { id: '11', name: 'Lalbagh Fort', type: 'landmark' },
   { id: '12', name: 'Ahsan Manzil', type: 'landmark' },
-  { id: '13', name: 'Shaheed Minar', type: 'landmark' },
-  { id: '14', name: 'National Parliament House', type: 'landmark' },
-  { id: '15', name: 'Dhakeshwari Temple', type: 'landmark' },
-  { id: '16', name: 'Star Mosque', type: 'landmark' },
-  { id: '17', name: 'Baitul Mukarram Mosque', type: 'landmark' },
-  
-  // Shopping Malls
   { id: '18', name: 'Bashundhara City Mall', type: 'mall' },
-  { id: '19', name: 'Jamuna Future Park', type: 'mall' },
-  { id: '20', name: 'New Market', type: 'mall' },
-  { id: '21', name: 'Gulshan 1 Shopping Area', type: 'mall' },
-  
-  // Parks & Recreation
   { id: '22', name: 'Hatirjheel', type: 'park' },
-  { id: '23', name: 'Ramna Park', type: 'park' },
-  { id: '24', name: 'Gulshan Lake Park', type: 'park' },
-  { id: '25', name: 'Baldha Garden', type: 'park' },
-  { id: '26', name: 'Suhrawardy Udyan', type: 'park' },
-  
-  // Museums & Cultural Sites
-  { id: '27', name: 'Bangladesh National Museum', type: 'attraction' },
-  { id: '28', name: 'Liberation War Museum', type: 'attraction' },
-  { id: '29', name: 'Bangabandhu Memorial Museum', type: 'attraction' },
-  
-  // Educational Institutions
-  { id: '30', name: 'University of Dhaka', type: 'landmark' },
-  { id: '31', name: 'BUET', type: 'landmark' },
-  { id: '32', name: 'Dhaka Medical College', type: 'landmark' },
-  { id: '33', name: 'Curzon Hall', type: 'landmark' },
-  
-  // Popular Restaurants & Cafes
   { id: '34', name: 'North End Coffee', type: 'cafe' },
-  { id: '35', name: 'Gloria Jean\'s Coffee', type: 'cafe' },
-  { id: '36', name: 'Bamboo Shoot', type: 'restaurant' },
-  { id: '37', name: 'Spice & Rice', type: 'restaurant' },
-  { id: '38', name: 'Kebab Village', type: 'restaurant' },
-  
-  // Entertainment
-  { id: '39', name: 'Star Cineplex', type: 'entertainment' },
-  { id: '40', name: 'Blockbuster Cinemas', type: 'entertainment' },
-  { id: '41', name: 'Bashundhara Sports Complex', type: 'entertainment' },
-  
-  // Markets & Bazaars
-  { id: '42', name: 'Chawk Bazar', type: 'attraction' },
-  { id: '43', name: 'Gulshan 2 Market', type: 'mall' },
-  { id: '44', name: 'Banani Super Market', type: 'mall' },
-  
-  // Hotels & Business Areas
-  { id: '45', name: 'Radisson Blu Dhaka', type: 'landmark' },
-  { id: '46', name: 'Westin Dhaka', type: 'landmark' },
-  { id: '47', name: 'Bangladesh Bank', type: 'landmark' },
-  { id: '48', name: 'Bangladesh Secretariat', type: 'landmark' },
 ];
+
 // Helper function to get the icon safely
 const getLocationIcon = (type: string): string => {
   return locationTypeIcons[type as LocationType] || locationTypeIcons.default;
 };
+
 export default function CreatePostScreen() {
   const params = useLocalSearchParams();
+  const router = useRouter();
+  const { getAuthHeaders, isAuthenticated, user } = useAuth();
+  
   const [postContent, setPostContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -370,9 +88,11 @@ export default function CreatePostScreen() {
   const [locationSearchQuery, setLocationSearchQuery] = useState("");
   const [currentLocation, setCurrentLocation] = useState<string | null>(null);
   const [activeEmojiCategory, setActiveEmojiCategory] = useState(0);
-  const router = useRouter();
+  const [privacy, setPrivacy] = useState<"public" | "friends" | "private">("public");
 
-  // NEW: Handle incoming image from TabLayout
+  const API_BASE_URL = 'http://localhost:3000';
+
+  // Handle incoming image from TabLayout
   useEffect(() => {
     console.log("CreatePost params received:", params);
 
@@ -380,7 +100,7 @@ export default function CreatePostScreen() {
       const imageUri = params.imageUri as string;
       console.log("Setting selected image from params:", imageUri);
       setSelectedImage(imageUri);
-      setSelectedVideo(null); // Clear video if image is selected
+      setSelectedVideo(null);
     }
   }, [params]);
 
@@ -398,8 +118,6 @@ export default function CreatePostScreen() {
       }
 
       const location = await Location.getCurrentPositionAsync({});
-
-      // Reverse geocode to get address
       const [address] = await Location.reverseGeocodeAsync({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
@@ -412,11 +130,71 @@ export default function CreatePostScreen() {
     }
   };
 
+  // Helper function to convert image URI to base64
+  const convertImageToBase64 = async (uri: string): Promise<string> => {
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result as string;
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error('Error converting image to base64:', error);
+      throw new Error('Failed to process image');
+    }
+  };
+
+  // Upload image to server - FIXED IMPLEMENTATION
+  const uploadImage = async (imageUri: string): Promise<string> => {
+    try {
+      console.log("Starting image upload...");
+      
+      // Convert image to base64
+      const base64Image = await convertImageToBase64(imageUri);
+      
+      const headers = await getAuthHeaders();
+      
+      const uploadResponse = await fetch(`${API_BASE_URL}/upload`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: base64Image,
+          type: 'post'
+        }),
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed with status: ${uploadResponse.status}`);
+      }
+
+      const uploadData = await uploadResponse.json();
+      
+      if (!uploadData.success || !uploadData.url) {
+        throw new Error(uploadData.message || 'Failed to upload image');
+      }
+
+      console.log("Image uploaded successfully:", uploadData.url);
+      return uploadData.url;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      throw new Error('Failed to upload image. Please try again.');
+    }
+  };
+
   // Pick Image
   const pickImage = async () => {
     try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (status !== "granted") {
         Alert.alert(
@@ -435,7 +213,7 @@ export default function CreatePostScreen() {
 
       if (!result.canceled) {
         setSelectedImage(result.assets[0].uri);
-        setSelectedVideo(null); // Clear video if image is selected
+        setSelectedVideo(null);
       }
     } catch (error) {
       Alert.alert("Error", "Failed to pick image");
@@ -445,8 +223,7 @@ export default function CreatePostScreen() {
   // Pick Video
   const pickVideo = async () => {
     try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (status !== "granted") {
         Alert.alert(
@@ -465,7 +242,7 @@ export default function CreatePostScreen() {
 
       if (!result.canceled) {
         setSelectedVideo(result.assets[0].uri);
-        setSelectedImage(null); // Clear image if video is selected
+        setSelectedImage(null);
       }
     } catch (error) {
       Alert.alert("Error", "Failed to pick video");
@@ -486,8 +263,6 @@ export default function CreatePostScreen() {
       }
 
       const location = await Location.getCurrentPositionAsync({});
-
-      // Reverse geocode to get address
       const [address] = await Location.reverseGeocodeAsync({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
@@ -530,57 +305,98 @@ export default function CreatePostScreen() {
     location.name.toLowerCase().includes(locationSearchQuery.toLowerCase())
   );
 
-  const handleSubmit = async () => {
-    if (!postContent.trim() && !selectedImage && !selectedVideo) {
-      Alert.alert(
-        "Error",
-        "Please write something or add media before posting."
-      );
-      return;
+
+const handleSubmit = async () => {
+  if (!postContent.trim() && !selectedImage && !selectedVideo) {
+    Alert.alert(
+      "Error",
+      "Please write something or add media before posting."
+    );
+    return;
+  }
+
+  if (postContent.length > 280) {
+    Alert.alert("Error", "Post must be less than 280 characters.");
+    return;
+  }
+
+  if (!isAuthenticated) {
+    Alert.alert("Error", "Please login to create a post.");
+    return;
+  }
+
+  setIsSubmitting(true);
+
+  try {
+    let imageBase64 = "";
+
+    // Convert image to base64 if selected
+    if (selectedImage) {
+      console.log("Converting image to base64...");
+      imageBase64 = await convertImageToBase64(selectedImage);
+      console.log("Image converted to base64");
     }
 
-    if (postContent.length > 280) {
-      Alert.alert("Error", "Post must be less than 280 characters.");
-      return;
+    // Prepare post data for API - send base64 directly
+    const postData = {
+      content: postContent,
+      image: imageBase64, // Send base64 directly
+      privacy: privacy,
+      location: selectedLocation,
+    };
+
+    console.log("Creating post with data:", {
+      content: postData.content,
+      hasImage: !!postData.image,
+      privacy: postData.privacy
+    });
+
+    const headers = await getAuthHeaders();
+    
+    console.log("Sending request to:", `${API_BASE_URL}/posts`);
+    
+    const response = await fetch(`${API_BASE_URL}/posts`, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(postData),
+    });
+
+    console.log("Response status:", response.status);
+    
+    const data = await response.json();
+    console.log("Response data:", data);
+
+    if (response.ok && data.success) {
+      console.log("Post created successfully:", data);
+      
+      Alert.alert("Success", "Your post has been created!");
+      
+      // Clear form
+      setPostContent("");
+      setSelectedImage(null);
+      setSelectedVideo(null);
+      setSelectedLocation(null);
+      
+      setTimeout(() => {
+        router.replace("/");
+      }, 500);
+    } else {
+      console.error("API Error:", data);
+      throw new Error(data.message || `Server returned ${response.status}`);
     }
-
-    setIsSubmitting(true);
-
-    try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Create post object with all data
-      const postData = {
-        content: postContent,
-        image: selectedImage,
-        video: selectedVideo,
-        location: selectedLocation,
-        timestamp: new Date().toISOString(),
-      };
-
-      console.log("Creating post:", postData);
-
-      // Show success message
-      Alert.alert("Success", "Your post has been published!", [
-        {
-          text: "OK",
-          onPress: () => {
-            // Reset everything
-            setPostContent("");
-            setSelectedImage(null);
-            setSelectedVideo(null);
-            setSelectedLocation(null);
-            router.back();
-          },
-        },
-      ]);
-    } catch (error) {
-      Alert.alert("Error", "Failed to create post. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  } catch (error) {
+    console.error('Error creating post:', error);
+    Alert.alert(
+      "Error", 
+      error instanceof Error ? error.message : "Failed to create post. Please try again."
+    );
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const handleDraft = () => {
     if (postContent.trim() || selectedImage || selectedVideo) {
@@ -599,6 +415,49 @@ export default function CreatePostScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <Text style={styles.title}>Create New Post</Text>
+
+        {/* Privacy Selector */}
+        <View style={styles.privacyContainer}>
+          <Text style={styles.privacyLabel}>Privacy:</Text>
+          <View style={styles.privacyOptions}>
+            <TouchableOpacity 
+              style={[
+                styles.privacyOption, 
+                privacy === 'public' && styles.privacyOptionActive
+              ]}
+              onPress={() => setPrivacy('public')}
+            >
+              <Text style={[
+                styles.privacyOptionText,
+                privacy === 'public' && styles.privacyOptionTextActive
+              ]}>🌍 Public</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[
+                styles.privacyOption, 
+                privacy === 'friends' && styles.privacyOptionActive
+              ]}
+              onPress={() => setPrivacy('friends')}
+            >
+              <Text style={[
+                styles.privacyOptionText,
+                privacy === 'friends' && styles.privacyOptionTextActive
+              ]}>👥 Friends</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[
+                styles.privacyOption, 
+                privacy === 'private' && styles.privacyOptionActive
+              ]}
+              onPress={() => setPrivacy('private')}
+            >
+              <Text style={[
+                styles.privacyOptionText,
+                privacy === 'private' && styles.privacyOptionTextActive
+              ]}>🔒 Private</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* Post Content Input */}
         <TextInput
@@ -632,6 +491,7 @@ export default function CreatePostScreen() {
           <View style={styles.mediaPreview}>
             <View style={styles.videoPreview}>
               <Text style={styles.videoPreviewText}>🎥 Video Selected</Text>
+              <Text style={styles.videoNote}>Note: Video upload not yet supported</Text>
             </View>
             <TouchableOpacity
               style={styles.removeMediaButton}
@@ -691,9 +551,11 @@ export default function CreatePostScreen() {
               isSubmitting
             }
           >
-            <Text style={styles.postButtonText}>
-              {isSubmitting ? "Posting..." : "Post"}
-            </Text>
+            {isSubmitting ? (
+              <ActivityIndicator color="white" size="small" />
+            ) : (
+              <Text style={styles.postButtonText}>Post</Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -748,7 +610,6 @@ export default function CreatePostScreen() {
                   </TouchableOpacity>
                 </View>
 
-                {/* Emoji Category Tabs */}
                 <View style={styles.emojiCategories}>
                   {emojiCategories.map((category, index) => (
                     <TouchableOpacity
@@ -773,7 +634,6 @@ export default function CreatePostScreen() {
                   ))}
                 </View>
 
-                {/* Emoji Grid */}
                 <FlatList
                   data={emojiCategories[activeEmojiCategory].emojis}
                   renderItem={({ item }) => (
@@ -810,7 +670,6 @@ export default function CreatePostScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Search Bar */}
             <View style={styles.searchContainer}>
               <TextInput
                 style={styles.searchInput}
@@ -821,7 +680,6 @@ export default function CreatePostScreen() {
               <Text style={styles.searchIcon}>🔍</Text>
             </View>
 
-            {/* Current Location Option */}
             <TouchableOpacity
               style={styles.locationOption}
               onPress={getLocation}
@@ -835,7 +693,6 @@ export default function CreatePostScreen() {
               </View>
             </TouchableOpacity>
 
-            {/* Popular Locations */}
             <Text style={styles.sectionTitle}>Popular Locations</Text>
             <FlatList
               data={filteredLocations}
@@ -860,7 +717,6 @@ export default function CreatePostScreen() {
               showsVerticalScrollIndicator={false}
             />
 
-            {/* Custom Location Option */}
             <TouchableOpacity
               style={styles.customLocationOption}
               onPress={() => {
@@ -903,6 +759,41 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#1DA1F2",
   },
+  privacyContainer: {
+    marginBottom: 15,
+  },
+  privacyLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 8,
+    color: "#333",
+  },
+  privacyOptions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  privacyOption: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#e1e8ed",
+    alignItems: "center",
+    marginHorizontal: 4,
+  },
+  privacyOptionActive: {
+    backgroundColor: "#1DA1F2",
+    borderColor: "#1DA1F2",
+  },
+  privacyOptionText: {
+    fontSize: 14,
+    color: "#657786",
+  },
+  privacyOptionTextActive: {
+    color: "white",
+    fontWeight: "600",
+  },
   textInput: {
     minHeight: 120,
     fontSize: 16,
@@ -936,6 +827,11 @@ const styles = StyleSheet.create({
   videoPreviewText: {
     fontSize: 16,
     color: "#666",
+  },
+  videoNote: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 4,
   },
   removeMediaButton: {
     position: "absolute",
@@ -1038,7 +934,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#657786",
   },
-  // Emoji Picker Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -1100,7 +995,6 @@ const styles = StyleSheet.create({
   emoji: {
     fontSize: 24,
   },
-  // Location Picker Styles
   locationPicker: {
     backgroundColor: "white",
     borderTopLeftRadius: 20,

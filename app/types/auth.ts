@@ -4,15 +4,12 @@ export interface User {
   email: string;
   username: string;
   fullName: string;
-  avatar?: string;
+  profilePicture?: string;
+  coverPhoto?: string;
   bio?: string;
   createdAt: string;
-}
-
-export interface AuthState {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
+  postsCount?: number;
+  friendsCount?: number;
 }
 
 export interface LoginCredentials {
@@ -25,4 +22,12 @@ export interface SignupCredentials {
   password: string;
   username: string;
   fullName: string;
+  profilePicture?: string;
+  bio?: string;
+}
+
+export interface AuthState {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
 }

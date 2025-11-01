@@ -5,6 +5,7 @@ export interface User {
   username: string;
   fullName: string;
   profilePicture?: string;
+  isProfileComplete?:false;
   coverPhoto?: string;
   bio?: string;
   createdAt: string;
@@ -31,3 +32,5 @@ export interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
 }
+
+

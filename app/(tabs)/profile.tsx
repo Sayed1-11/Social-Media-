@@ -35,7 +35,7 @@ interface Post {
   updatedAt: string;
   user?: {
     _id: string;
-    name: string;
+    fullName: string;
     profilePicture?: string;
     coverPhoto?: string;
   };
@@ -45,7 +45,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { colors, isDark } = useThemeStyles();
-  const { user, getAuthHeaders, updateUser } = useAuth(); // Added updateUser
+  const { user, getAuthHeaders, updateUser } = useAuth();
   const [activeTab, setActiveTab] = useState<"posts" | "videos" | "photos">(
     "posts"
   );
@@ -53,6 +53,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingType, setUploadingType] = useState<"profile" | "cover" | null>(null);
 
   const API_BASE_URL = "http://localhost:3000";
 
@@ -60,8 +61,7 @@ export default function ProfileScreen() {
   useEffect(() => {
     (async () => {
       if (Platform.OS !== "web") {
-        const { status } =
-          await ImagePicker.requestMediaLibraryPermissionsAsync();
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== "granted") {
           Alert.alert(
             "Permission required",
@@ -104,10 +104,11 @@ export default function ProfileScreen() {
     }
   };
 
-  // Upload profile image
+  // Simple upload profile image - directly opens gallery
   const uploadProfileImage = async () => {
     try {
       setUploading(true);
+      setUploadingType("profile");
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -117,48 +118,63 @@ export default function ProfileScreen() {
         base64: true,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        const imageUri = result.assets[0].uri;
-
-        // Create form data for file upload
-        const formData = new FormData();
-        formData.append("profilePicture", {
-          uri: imageUri,
-          type: "image/jpeg",
-          name: "profile-picture.jpg",
-        } as any);
-
+      if (!result.canceled && result.assets[0] && result.assets[0].base64) {
+        const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
+        
         const headers = await getAuthHeaders();
-
-        const response = await fetch(`${API_BASE_URL}/profile`, {
-          method: "PUT",
+        
+        // First upload to imgBB
+        const uploadResponse = await fetch(`${API_BASE_URL}/upload`, {
+          method: "POST",
           headers: {
             ...headers,
-            "Content-Type": "multipart/form-data",
+            'Content-Type': 'application/json',
           } as HeadersInit,
-          body: formData,
+          body: JSON.stringify({ image: base64Image }),
         });
 
-        const data = await response.json();
+        const uploadData = await uploadResponse.json();
 
-        if (response.ok && data.success) {
-          // Update user context with new profile picture
-          if (updateUser) {
-            updateUser({ profilePicture: data.user.profilePicture });
+        if (uploadResponse.ok && uploadData.success) {
+          // Then update profile with the returned URL
+          const profileResponse = await fetch(`${API_BASE_URL}/profile`, {
+            method: "PUT",
+            headers: {
+              ...headers,
+              'Content-Type': 'application/json',
+            } as HeadersInit,
+            body: JSON.stringify({
+              profilePicture: uploadData.url
+            }),
+          });
+
+          const profileData = await profileResponse.json();
+
+          if (profileResponse.ok && profileData.success) {
+            // Update user context with new profile picture
+            if (updateUser) {
+              updateUser({ 
+                profilePicture: profileData.user.profilePicture,
+                isProfileComplete: profileData.isProfileComplete 
+              });
+            }
+            Alert.alert("Success", "Profile picture updated successfully!");
+          } else {
+            throw new Error(profileData.message || "Failed to update profile");
           }
-          Alert.alert("Success", "Profile picture updated successfully!");
         } else {
-          throw new Error(data.message || "Failed to upload profile picture");
+          throw new Error(uploadData.message || "Failed to upload image");
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error uploading profile image:", error);
       Alert.alert(
         "Error",
-        "Failed to upload profile picture. Please try again."
+        error.message || "Failed to upload profile picture. Please try again."
       );
     } finally {
       setUploading(false);
+      setUploadingType(null);
     }
   };
 
@@ -166,6 +182,7 @@ export default function ProfileScreen() {
   const uploadCoverPhoto = async () => {
     try {
       setUploading(true);
+      setUploadingType("cover");
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -175,119 +192,60 @@ export default function ProfileScreen() {
         base64: true,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        const imageUri = result.assets[0].uri;
-
-        // Create form data for file upload
-        const formData = new FormData();
-        formData.append("coverPhoto", {
-          uri: imageUri,
-          type: "image/jpeg",
-          name: "cover-photo.jpg",
-        } as any);
-
+      if (!result.canceled && result.assets[0] && result.assets[0].base64) {
+        const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
+        
         const headers = await getAuthHeaders();
-
-        const response = await fetch(`${API_BASE_URL}/profile`, {
-          method: "PUT",
+        
+        // First upload to imgBB
+        const uploadResponse = await fetch(`${API_BASE_URL}/upload`, {
+          method: "POST",
           headers: {
             ...headers,
-            "Content-Type": "multipart/form-data",
+            'Content-Type': 'application/json',
           } as HeadersInit,
-          body: formData,
+          body: JSON.stringify({ image: base64Image }),
         });
 
-        const data = await response.json();
+        const uploadData = await uploadResponse.json();
 
-        if (response.ok && data.success) {
-          // Update user context with new cover photo
-          if (updateUser) {
-            updateUser({ coverPhoto: data.user.coverPhoto });
+        if (uploadResponse.ok && uploadData.success) {
+          // Then update profile with the returned URL
+          const profileResponse = await fetch(`${API_BASE_URL}/profile`, {
+            method: "PUT",
+            headers: {
+              ...headers,
+              'Content-Type': 'application/json',
+            } as HeadersInit,
+            body: JSON.stringify({
+              coverPhoto: uploadData.url
+            }),
+          });
+
+          const profileData = await profileResponse.json();
+
+          if (profileResponse.ok && profileData.success) {
+            // Update user context with new cover photo
+            if (updateUser) {
+              updateUser({ 
+                coverPhoto: profileData.user.coverPhoto 
+              });
+            }
+            Alert.alert("Success", "Cover photo updated successfully!");
+          } else {
+            throw new Error(profileData.message || "Failed to update profile");
           }
-          Alert.alert("Success", "Cover photo updated successfully!");
         } else {
-          throw new Error(data.message || "Failed to upload cover photo");
+          throw new Error(uploadData.message || "Failed to upload image");
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error uploading cover photo:", error);
       Alert.alert("Error", "Failed to upload cover photo. Please try again.");
     } finally {
       setUploading(false);
+      setUploadingType(null);
     }
-  };
-
-  // Take photo with camera for profile picture
-  const takeProfilePhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission required",
-          "Sorry, we need camera permissions to take photos."
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-        base64: true,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const imageUri = result.assets[0].uri;
-
-        const formData = new FormData();
-        formData.append("profilePicture", {
-          uri: imageUri,
-          type: "image/jpeg",
-          name: "profile-picture.jpg",
-        } as any);
-
-        const headers = await getAuthHeaders();
-
-        const response = await fetch(`${API_BASE_URL}/profile/picture`, {
-          method: "PUT",
-          headers: {
-            ...headers,
-            "Content-Type": "multipart/form-data",
-          } as HeadersInit,
-          body: formData,
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-          if (updateUser) {
-            updateUser({ profilePicture: data.user.profilePicture });
-          }
-          Alert.alert("Success", "Profile picture updated successfully!");
-        }
-      }
-    } catch (error) {
-      console.error("Error taking profile photo:", error);
-      Alert.alert("Error", "Failed to take photo. Please try again.");
-    }
-  };
-
-  // Image upload options
-  const showProfileImageOptions = () => {
-    Alert.alert("Update Profile Picture", "Choose an option", [
-      {
-        text: "Take Photo",
-        onPress: takeProfilePhoto,
-      },
-      {
-        text: "Choose from Library",
-        onPress: uploadProfileImage,
-      },
-      {
-        text: "Cancel",
-        style: "cancel",
-      },
-    ]);
   };
 
   // Like/Unlike post
@@ -416,7 +374,6 @@ export default function ProfileScreen() {
         "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
       mutualFriends: 12,
     },
-    // ... rest of your friends data
   ];
 
   const userPhotos = [
@@ -425,7 +382,6 @@ export default function ProfileScreen() {
       type: "photo",
       uri: "https://images.unsplash.com/photo-1518791841217-8f162f1e1131?w=300&h=300&fit=crop",
     },
-    // ... rest of your photos data
   ];
 
   const userVideos = [
@@ -436,7 +392,6 @@ export default function ProfileScreen() {
       duration: "2:30",
       views: "12K",
     },
-    // ... rest of your videos data
   ];
 
   const handleFriendPress = (friend: any) => {
@@ -464,7 +419,7 @@ export default function ProfileScreen() {
   // Render actual posts from API
   const renderPostItem = ({ item }: { item: Post }) => {
     const hasLiked = item.likes.some((like) => like.userId === user?.id);
-    const displayName = item.user?.name || user?.fullName || "User";
+    const displayName = item.user?.fullName || user?.fullName || "User";
     const profilePicture =
       item.user?.profilePicture ||
       user?.profilePicture ||
@@ -577,6 +532,10 @@ export default function ProfileScreen() {
   const bio =
     user?.bio || "Welcome to my profile! Connect with me to stay updated!";
 
+  // Check if currently uploading
+  const isUploadingProfile = uploading && uploadingType === "profile";
+  const isUploadingCover = uploading && uploadingType === "cover";
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Fixed Header */}
@@ -624,7 +583,7 @@ export default function ProfileScreen() {
               onPress={uploadCoverPhoto}
               disabled={uploading}
             >
-              {uploading ? (
+              {isUploadingCover ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
                 <Ionicons name="camera" size={20} color="#fff" />
@@ -641,10 +600,11 @@ export default function ProfileScreen() {
               />
               <TouchableOpacity
                 style={styles.profileImageBadge}
-                onPress={showProfileImageOptions}
+                onPress={uploadProfileImage} 
                 disabled={uploading}
+                activeOpacity={0.7}
               >
-                {uploading ? (
+                {isUploadingProfile ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Ionicons name="camera" size={14} color="#fff" />
@@ -921,6 +881,7 @@ const createStyles = (colors: any) =>
       position: "absolute",
       top: 120,
       left: 16,
+      zIndex: 1000,
     },
     profileImageContainer: {
       position: "relative",
@@ -934,16 +895,22 @@ const createStyles = (colors: any) =>
     },
     profileImageBadge: {
       position: "absolute",
-      bottom: 0,
-      right: 0,
+      bottom: -5,
+      right: -5,
       backgroundColor: colors.accent,
-      borderRadius: 12,
-      width: 28,
-      height: 28,
+      borderRadius: 16,
+      width: 36,
+      height: 36,
       justifyContent: "center",
       alignItems: "center",
       borderWidth: 2,
       borderColor: colors.surface,
+      zIndex: 1001,
+      elevation: 10,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 3,
     },
     profileInfoSection: {
       paddingHorizontal: 16,
@@ -1049,7 +1016,6 @@ const createStyles = (colors: any) =>
     activeTabText: {
       color: "#fff",
     },
-    // ... rest of your styles remain the same
     postsContainer: {
       flex: 1,
       marginHorizontal: 16,

@@ -1,6 +1,6 @@
 // app/signup.tsx
 import { Ionicons } from '@expo/vector-icons';
-import { Link, useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -29,7 +29,6 @@ export default function SignupScreen() {
   const [isLoading, setIsLoading] = useState(false);
   
   const { signup } = useAuth();
-  const router = useRouter();
 
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -81,7 +80,7 @@ export default function SignupScreen() {
     try {
       await signup({
         fullName: formData.fullName,
-        username: formData.username, // Include username
+        username: formData.username, 
         email: formData.email,
         password: formData.password,
       });

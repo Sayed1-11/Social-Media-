@@ -19,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
 export default function MenuScreen() {
-  const { user, logout } = useAuth(); // Get user from AuthContext
+  const { user, logout } = useAuth(); 
   const router = useRouter();
   const { theme, toggleTheme, setTheme } = useTheme();
   const { colors, isDark } = useThemeStyles();
@@ -79,7 +79,8 @@ export default function MenuScreen() {
   // Fallback profile picture if user doesn't have one
   const profilePicture = user?.profilePicture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
 
-  // Generate username from fullName if not available
+  const fullname = user?.fullName;
+
   const username = user?.username || `@${user?.fullName?.toLowerCase().replace(/\s+/g, '_')}` || '@user';
 
   const menuSections = [
@@ -221,7 +222,7 @@ export default function MenuScreen() {
             
             <View style={styles.profileInfo}>
               <Text style={styles.profileName}>
-                {user?.fullName || 'User Name'}
+                {fullname || 'User name'}
               </Text>
               <Text style={styles.profileHandle}>
                 {username}

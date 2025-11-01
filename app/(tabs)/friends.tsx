@@ -1,5 +1,6 @@
 import { useThemeStyles } from '@/hooks/useThemeStyles';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -55,6 +56,7 @@ export default function FriendsScreen() {
   
   const { colors, isDark } = useThemeStyles();
   const { getAuthHeaders, user } = useAuth();
+  const router = useRouter();
 
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -69,11 +71,15 @@ export default function FriendsScreen() {
 
   // Search users when query changes
   useEffect(() => {
-    if (searchQuery.trim()) {
-      searchUsers();
-    } else {
-      setSearchResults([]);
-    }
+    const timeoutId = setTimeout(() => {
+      if (searchQuery.trim()) {
+        searchUsers();
+      } else {
+        setSearchResults([]);
+      }
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
   const loadFriendRequests = async () => {
@@ -114,17 +120,26 @@ export default function FriendsScreen() {
     try {
       setSearching(true);
       const headers = await getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/users/search?q=${encodeURIComponent(searchQuery)}`, {
+      
+      // Try the alternative endpoint
+      const response = await fetch(`${API_BASE_URL}/users/search/${encodeURIComponent(searchQuery)}`, {
         headers,
       });
 
+      console.log('Search response status:', response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log('Search results:', data.users);
         setSearchResults(data.users || []);
+      } else {
+        console.log('Search failed with status:', response.status);
+        setSearchResults([]);
       }
     } catch (error) {
       console.error('Error searching users:', error);
       Alert.alert('Error', 'Failed to search users');
+      setSearchResults([]);
     } finally {
       setSearching(false);
     }
@@ -169,7 +184,8 @@ export default function FriendsScreen() {
       if (response.ok) {
         Alert.alert('Success', 'Friend request accepted');
         setFriendRequests(prev => prev.filter(req => req._id !== requestId));
-        loadFriends(); // Reload friends list
+        loadFriends(); 
+        // Reload friends list
       } else {
         Alert.alert('Error', data.message || 'Failed to accept friend request');
       }
@@ -240,6 +256,37 @@ export default function FriendsScreen() {
     );
   };
 
+  const startConversation = async (recipientId: string) => {
+    try {
+      const authHeaders = await getAuthHeaders();
+      const headers = {
+        ...authHeaders,
+        'Content-Type': 'application/json',
+      };
+      console.log("recipent id",)
+      const response = await fetch(`http://localhost:3000/conversations`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ participantId: recipientId }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          router.push(`/chat/${data.conversation._id}?participantId=${recipientId}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error starting conversation:', error);
+      Alert.alert('Error', 'Failed to start conversation');
+    }
+  };
+
+  // Navigate to user profile
+  const navigateToUserProfile = (userId: string) => {
+    router.push(`/UserProfileScreen?userId=${userId}`);
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([loadFriendRequests(), loadFriends()]);
@@ -251,7 +298,11 @@ export default function FriendsScreen() {
     if (!requester) return null;
 
     return (
-      <View key={request._id} style={styles.requestItem}>
+      <TouchableOpacity 
+        key={request._id} 
+        style={styles.requestItem}
+        onPress={() => navigateToUserProfile(requester._id)}
+      >
         <View style={styles.requestLeft}>
           <View style={styles.avatarContainer}>
             <Image 
@@ -271,23 +322,33 @@ export default function FriendsScreen() {
         <View style={styles.requestActions}>
           <TouchableOpacity 
             style={styles.acceptButton}
-            onPress={() => handleAcceptRequest(request._id)}
+            onPress={(e) => {
+              e.stopPropagation(); // Prevent navigation when clicking button
+              handleAcceptRequest(request._id);
+            }}
           >
             <Text style={styles.acceptButtonText}>Accept</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.declineButton}
-            onPress={() => handleDeclineRequest(request._id)}
+            onPress={(e) => {
+              e.stopPropagation(); // Prevent navigation when clicking button
+              handleDeclineRequest(request._id);
+            }}
           >
             <Text style={styles.declineButtonText}>Decline</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   const renderFriend = (friend: Friend) => (
-    <TouchableOpacity key={friend._id} style={styles.friendItem}>
+    <TouchableOpacity 
+      key={friend._id} 
+      style={styles.friendItem}
+      onPress={() => navigateToUserProfile(friend.user._id)}
+    >
       <View style={styles.friendLeft}>
         <View style={styles.avatarContainer}>
           <Image 
@@ -306,12 +367,21 @@ export default function FriendsScreen() {
       </View>
       
       <View style={styles.friendActions}>
-        <TouchableOpacity style={styles.messageButton}>
+        <TouchableOpacity 
+          style={styles.messageButton}
+          onPress={(e) => {
+            e.stopPropagation(); // Prevent navigation when clicking button
+            startConversation(friend.user._id); // Pass the user ID, not the friend relationship ID
+          }}
+        >
           <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
         <TouchableOpacity 
           style={styles.moreButton}
-          onPress={() => handleRemoveFriend(friend.user._id)}
+          onPress={(e) => {
+            e.stopPropagation(); // Prevent navigation when clicking button
+            handleRemoveFriend(friend.user._id);
+          }}
         >
           <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
@@ -320,7 +390,11 @@ export default function FriendsScreen() {
   );
 
   const renderSearchResult = (user: User) => (
-    <TouchableOpacity key={user._id} style={styles.searchResultItem}>
+    <TouchableOpacity 
+      key={user._id} 
+      style={styles.searchResultItem}
+      onPress={() => navigateToUserProfile(user._id)}
+    >
       <View style={styles.friendLeft}>
         <View style={styles.avatarContainer}>
           <Image 
@@ -335,7 +409,10 @@ export default function FriendsScreen() {
       </View>
       <TouchableOpacity 
         style={styles.addFriendButton}
-        onPress={() => sendFriendRequest(user._id)}
+        onPress={(e) => {
+          e.stopPropagation(); // Prevent navigation when clicking button
+          sendFriendRequest(user._id);
+        }}
       >
         <Ionicons name="person-add-outline" size={20} color={colors.primary} />
       </TouchableOpacity>

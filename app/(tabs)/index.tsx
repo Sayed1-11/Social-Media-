@@ -1,29 +1,26 @@
 import { useThemeStyles } from '@/hooks/useThemeStyles';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  Dimensions,
   FlatList,
   Image,
   Modal,
   Platform,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
+import { io, Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=face';
 
-// API Types based on your backend
 type User = {
   _id: string;
   name: string;
@@ -81,6 +78,7 @@ type Post = {
   time: string;
   userImage: string;
   image?: string;
+  shares: number;
   isLiked: boolean;
   commentsList: Array<{
     id: string;
@@ -91,6 +89,7 @@ type Post = {
   }>;
   // For API operations
   _id?: string;
+  userId?: string;
 };
 
 type StoryType = {
@@ -118,27 +117,21 @@ type CreateStoryType = {
   content: string;
 };
 
-type FriendRequest = {
-  _id: string;
-  requesterId: string;
-  recipientId: string;
-  requester?: User;
-  status: string;
-  createdAt: Date;
-};
-
 // API Configuration
 const API_BASE_URL = 'http://localhost:3000';
 
-// Styles remain the same as your original code
+// Updated Styles with message icon and notification badge
 const createStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
   appHeader: {
-    paddingVertical: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     backgroundColor: colors.surface,
@@ -147,6 +140,80 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: colors.primary,
+  },
+  headerIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  messageIcon: {
+    padding: 8,
+    marginLeft: 8,
+    position: 'relative',
+  },
+  // NEW: Notification badge styles
+  notificationBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  notificationText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  // NEW: Popup notification styles
+  popupNotification: {
+    position: "absolute",
+    top: 60,
+    left: 16,
+    right: 16,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    padding: 12,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  notificationContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  notificationAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  notificationTextContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
+  notificationName: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "bold",
+    marginBottom: 2,
+  },
+  notificationMessage: {
+    color: "white",
+    fontSize: 12,
+    opacity: 0.9,
   },
   listContent: {
     paddingBottom: 20,
@@ -217,201 +284,6 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: 'white',
     fontSize: 12,
     fontWeight: 'bold',
-  },
-  
-  // Full Screen Story Viewer
-  fullScreenStoryContainer: {
-    flex: 1,
-    backgroundColor: 'black',
-  },
-  progressBarContainer: {
-    position: 'absolute',
-    top: Platform.OS === 'web' ? 20 : 50,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    gap: 4,
-    zIndex: 1000,
-  },
-  progressBar: {
-    flex: 1,
-    height: 3,
-    backgroundColor: 'rgba(255,255,255,0.4)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: colors.primary,
-  },
-  storyHeader: {
-    position: 'absolute',
-    top: Platform.OS === 'web' ? 50 : 80,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    zIndex: 1000,
-  },
-  storyAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  storyUserInfo: {
-    flex: 1,
-  },
-  storyName: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  storyTime: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 14,
-  },
-  storyContent: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-  },
-  storyNavigation: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: '30%',
-    zIndex: 999,
-  },
-  closeButton: {
-    position: 'absolute',
-    top: Platform.OS === 'web' ? 30 : 60,
-    right: 20,
-    zIndex: 1000,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  closeButtonText: {
-    color: 'white',
-    fontSize: 24,
-    fontWeight: '300',
-  },
-  actionButtons: {
-    position: 'absolute',
-    bottom: 40,
-    right: 20,
-    zIndex: 1000,
-    gap: 15,
-  },
-  actionButton: {
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  actionButtonText: {
-    color: 'white',
-    fontSize: 20,
-  },
-
-  // Story Creation
-  createStoryButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-    alignSelf: 'center',
-  },
-  createStoryText: {
-    color: 'white',
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  createStoryModal: {
-    backgroundColor: colors.surface,
-    margin: 20,
-    borderRadius: 15,
-    padding: 20,
-    maxWidth: 500,
-    width: '90%',
-    alignSelf: 'center',
-  },
-  createStoryTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  storyInput: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-    color: colors.text,
-    marginBottom: 16,
-  },
-  storyPreview: {
-    width: '100%',
-    height: 400,
-    borderRadius: 10,
-    marginBottom: 16,
-    backgroundColor: colors.background,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  secondaryButton: {
-    flex: 1,
-    backgroundColor: colors.background,
-    padding: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  secondaryButtonText: {
-    color: colors.text,
-    fontWeight: '600',
-  },
-  primaryButton: {
-    flex: 1,
-    backgroundColor: colors.primary,
-    padding: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: 'white',
-    fontWeight: '600',
-  },
-  fileInput: {
-    marginBottom: 16,
-  },
-  fileInputText: {
-    color: colors.primary,
-    fontWeight: '600',
-    textAlign: 'center',
-    padding: 12,
-    borderWidth: 2,
-    borderColor: colors.primary,
-    borderRadius: 10,
-    borderStyle: 'dashed',
   },
 
   // Post Styles
@@ -494,7 +366,23 @@ const createStyles = (colors: any) => StyleSheet.create({
   likedAction: {
     color: colors.primary,
   },
-
+  closeButton: {
+    position: 'absolute',
+    top: Platform.OS === 'web' ? 30 : 60,
+    right: 20,
+    zIndex: 1000,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: '300',
+  },
   // Modal Styles
   modalOverlay: {
     flex: 1,
@@ -633,32 +521,22 @@ export default function HomeScreen() {
   
   // Story states
   const [stories, setStories] = useState<StoryType[]>([]);
-  const [storyModalVisible, setStoryModalVisible] = useState(false);
-  const [currentStory, setCurrentStory] = useState<StoryType | null>(null);
-  const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
-  const [progress, setProgress] = useState(0);
-  const { getAuthHeaders, isAuthenticated } = useAuth();
+  const { getAuthHeaders, isAuthenticated, user } = useAuth();
+  const router = useRouter();
   
-  // Story creation states
-  const [createStoryModalVisible, setCreateStoryModalVisible] = useState(false);
-  const [newStory, setNewStory] = useState<CreateStoryType>({
-    image: '',
-    content: ''
-  });
-  const [storyImage, setStoryImage] = useState<string>('');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  
+  // NEW: Message notification state
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [newMessageNotification, setNewMessageNotification] = useState<{
+    show: boolean;
+    conversationId: string;
+    message: any;
+  } | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
 
   const { colors } = useThemeStyles();
   const styles = createStyles(colors);
-
-  // Get token from storage
-  const getToken = async () => {
-    const realToken = await AsyncStorage.getItem('auth-token');
-    if (realToken) return realToken;
-    
-    console.log('No valid token found. Please login first.');
-    return null;
-  };
 
   // Helper function to format time
   const getTimeAgo = (date: Date) => {
@@ -669,6 +547,139 @@ export default function HomeScreen() {
     if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
     if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
     return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  };
+
+  // NEW: Get token from auth headers
+  const getToken = useCallback(async (): Promise<string | null> => {
+    try {
+      const authHeaders = await getAuthHeaders();
+      const headers = authHeaders as Record<string, string>;
+      
+      const authKey = Object.keys(headers).find(
+        key => key.toLowerCase() === 'authorization'
+      );
+      
+      const authHeader = authKey ? headers[authKey] : null;
+      
+      if (!authHeader) {
+        console.log('No Authorization header found');
+        return null;
+      }
+  
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+      
+      if (!token) {
+        console.log('Empty token found in Authorization header');
+        return null;
+      }
+      
+      console.log('✅ Token extracted successfully');
+      return token;
+    } catch (error) {
+      console.error('❌ Error getting token from auth headers:', error);
+      return null;
+    }
+  }, [getAuthHeaders]);
+
+  // NEW: Calculate total unread messages from conversations
+  const fetchUnreadMessageCount = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/conversations`, {
+        credentials: 'include',
+        headers: headers
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Calculate total unread count from all conversations
+          const totalUnread = data.conversations.reduce((total: number, conv: any) => {
+            return total + (conv.unreadCount || 0);
+          }, 0);
+          
+          setUnreadMessageCount(totalUnread);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching unread messages:', error);
+    }
+  };
+
+  // NEW: Initialize WebSocket for real-time notifications
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+
+    const initializeWebSocket = async () => {
+      const token = await getToken();
+      if (!token) return;
+
+      console.log("Initializing WebSocket connection for HomeScreen...");
+      
+      const newSocket = io("http://localhost:3000", {
+        auth: {
+          token: token
+        },
+        transports: ['websocket', 'polling']
+      });
+
+      newSocket.on('connect', () => {
+        console.log('HomeScreen WebSocket connected successfully');
+      });
+
+      newSocket.on('disconnect', () => {
+        console.log('HomeScreen WebSocket disconnected');
+      });
+
+      newSocket.on('connect_error', (error) => {
+        console.error('HomeScreen WebSocket connection error:', error);
+      });
+
+      // Listen for new messages to update notification count
+      newSocket.on('new_message', (data) => {
+        console.log('New message received in HomeScreen:', data);
+        
+        // Increment unread count
+        setUnreadMessageCount(prev => prev + 1);
+        
+        // Show popup notification
+        setNewMessageNotification({
+          show: true,
+          conversationId: data.conversationId,
+          message: data.message
+        });
+
+        // Auto-hide notification after 3 seconds
+        setTimeout(() => {
+          setNewMessageNotification(null);
+        }, 3000);
+      });
+
+      // Listen for messages read events to update count
+      newSocket.on('messages_read', (data) => {
+        console.log('Messages read event in HomeScreen:', data);
+        // Refresh unread count when messages are read
+        fetchUnreadMessageCount();
+      });
+
+      setSocket(newSocket);
+
+      return () => {
+        newSocket.disconnect();
+      };
+    };
+
+    initializeWebSocket();
+  }, [isAuthenticated, user, getToken]);
+
+  // NEW: Handle notification press
+  const handleNotificationPress = () => {
+    if (newMessageNotification) {
+      // Navigate to messages screen
+      setNewMessageNotification(null);
+      setUnreadMessageCount(0);
+      router.push('/(tabs)/messages');
+    }
   };
 
   // Fetch current user data
@@ -695,7 +706,7 @@ export default function HomeScreen() {
   };
 
   // Fetch posts from API
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     try {
       if (!isAuthenticated) {
         console.log('User not authenticated, redirecting to login...');
@@ -721,6 +732,7 @@ export default function HomeScreen() {
         const transformedPosts: Post[] = data.posts.map((post: ApiPost) => ({
           id: post._id,
           _id: post._id,
+          userId: post.userId,
           username: post.user?.name?.toLowerCase().replace(/\s+/g, '') || 'user',
           name: post.user?.name || 'User',
           content: post.content,
@@ -729,7 +741,7 @@ export default function HomeScreen() {
           time: getTimeAgo(post.createdAt),
           userImage: post.user?.profilePicture || DEFAULT_AVATAR,
           image: post.image,
-          isLiked: post.likes.some(like => like.userId === 'current-user-id'),
+          isLiked: post.likes.some(like => like.userId === user?.id),
           commentsList: post.comments.map(comment => ({
             id: comment._id,
             username: comment.user?.name?.toLowerCase().replace(/\s+/g, '') || 'user',
@@ -749,7 +761,7 @@ export default function HomeScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated, user?.id]);
 
   // Fetch stories from API
   const fetchStories = async () => {
@@ -853,466 +865,180 @@ export default function HomeScreen() {
     ensureCurrentUserStory();
   }, [stories]);
 
+  // NEW: Set up message polling and initial fetch
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Initial fetch
+    fetchUnreadMessageCount();
+
+    // Poll for new messages every 30 seconds
+    const messageInterval = setInterval(() => {
+      fetchUnreadMessageCount();
+    }, 30000);
+
+    return () => clearInterval(messageInterval);
+  }, [isAuthenticated]);
+
   // Fetch data on component mount
   useEffect(() => {
     if (isAuthenticated) {
       fetchPosts();
       fetchStories();
-       const interval = setInterval(() => {
-      fetchPosts(); // This will fetch new posts
-    }, 30000);
-    
-    return () => clearInterval(interval); // Cleanup on unmount
-  }
-    
-  }, [isAuthenticated]);
-
-  // Enhanced Story Functions
-  const openStory = (story: StoryType, storyIndex: number = 0) => {
-    // If user clicks on their own empty story, open creation modal
-    if (story.isUser && story.stories.length === 0) {
-      setCreateStoryModalVisible(true);
-      return;
+      const interval = setInterval(() => {
+        fetchPosts(); // This will fetch new posts
+      }, 30000);
+      
+      return () => clearInterval(interval); // Cleanup on unmount
     }
-    
-    // If story has no content, don't open viewer
-    if (story.stories.length === 0) {
-      Alert.alert('No Story', 'This user has no active stories.');
-      return;
-    }
-    
-    setCurrentStory(story);
-    setCurrentStoryIndex(storyIndex);
-    setProgress(0);
-    setStoryModalVisible(true);
-    
-    // Mark story as seen
-    setStories(prev => prev.map(s => 
-      s.id === story.id 
-        ? { ...s, hasNewStory: false, stories: s.stories.map(st => ({ ...st, seen: true })) }
-        : s
-    ));
+  }, [isAuthenticated, fetchPosts]);
 
-    // Hide status bar for full screen experience
-    if (Platform.OS !== 'web') {
-      StatusBar.setHidden(true);
-    }
-  };
-
-  const closeStory = () => {
-    setStoryModalVisible(false);
-    setCurrentStory(null);
-    setCurrentStoryIndex(0);
-    
-    // Show status bar again
-    if (Platform.OS !== 'web') {
-      StatusBar.setHidden(false);
-    }
-  };
-
-  const nextStory = () => {
-    if (!currentStory) return;
-    
-    const nextIndex = currentStoryIndex + 1;
-    if (nextIndex < currentStory.stories.length) {
-      setCurrentStoryIndex(nextIndex);
-      setProgress(0);
-    } else {
-      // Move to next user
-      const currentUserIndex = stories.findIndex(s => s.id === currentStory.id);
-      if (currentUserIndex < stories.length - 1) {
-        const nextUser = stories[currentUserIndex + 1];
-        openStory(nextUser, 0);
-      } else {
-        closeStory();
+  // Listen for refresh events
+  useFocusEffect(
+    useCallback(() => {
+      // This will run when the screen comes into focus
+      console.log('Home screen focused - refreshing data...');
+      fetchPosts();
+      fetchStories();
+      if (isAuthenticated) {
+        fetchUnreadMessageCount();
       }
-    }
-  };
-
-  const previousStory = () => {
-    if (!currentStory) return;
-    
-    const prevIndex = currentStoryIndex - 1;
-    if (prevIndex >= 0) {
-      setCurrentStoryIndex(prevIndex);
-      setProgress(0);
-    } else {
-      // Move to previous user
-      const currentUserIndex = stories.findIndex(s => s.id === currentStory.id);
-      if (currentUserIndex > 0) {
-        const prevUser = stories[currentUserIndex - 1];
-        const prevUserStories = prevUser.stories;
-        openStory(prevUser, prevUserStories.length - 1);
-      }
-    }
-  };
-
-  // Progress bar animation
-  useEffect(() => {
-    if (!storyModalVisible || !currentStory) return;
-    
-    const currentStoryItem = currentStory.stories[currentStoryIndex];
-    const duration = currentStoryItem.duration * 1000;
-    const interval = 50;
-    const steps = duration / interval;
-    const increment = 100 / steps;
-    
-    const timer = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(timer);
-          nextStory();
-          return 0;
-        }
-        return prev + increment;
-      });
-    }, interval);
-    
-    return () => clearInterval(timer);
-  }, [storyModalVisible, currentStory, currentStoryIndex]);
-
-  // Story creation functions
-  const handleImageUpload = async (event: any) => {
-    if (Platform.OS === 'web') {
-      const file = event.target.files?.[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const imageUrl = e.target?.result as string;
-          setStoryImage(imageUrl);
-          setNewStory(prev => ({ ...prev, image: imageUrl }));
-        };
-        reader.readAsDataURL(file);
-      }
-    } else {
-      // For React Native, you'd use expo-image-picker here
-      Alert.alert('Info', 'Image picker would open here in mobile app');
-    }
-  };
-
-  const createNewStory = async () => {
-    if (!newStory.image.trim()) {
-      Alert.alert('Error', 'Please select an image for your story');
-      return;
-    }
-
-    try {
-       const headers = await getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/stories`, {
-        method: 'POST',
-        credentials: 'include', // This sends cookies automatically
-      headers:  headers, // Get proper auth headers from context
-        body: JSON.stringify(newStory)
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          // Refresh stories
-          fetchStories();
-          setCreateStoryModalVisible(false);
-          setNewStory({ image: '', content: '' });
-          setStoryImage('');
-          Alert.alert('Success', 'Your story has been posted!');
-        }
-      } else {
-        throw new Error('Failed to create story');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to post story. Please try again.');
-    }
-  };
-
-  // Enhanced Story Renderer
-  const renderStory = ({ item }: { item: StoryType }) => (
-    <TouchableOpacity 
-      style={styles.storyContainer}
-      onPress={() => openStory(item, 0)}
-    >
-      <View style={[
-        styles.storyCircle,
-        item.hasNewStory ? styles.hasNewStory : styles.seenStory,
-        item.stories.length === 0 && styles.seenStory // Empty stories show as seen
-      ]}>
-        <Image 
-          source={{ uri: item.avatar }} 
-          style={styles.storyImage}
-        />
-        {item.isUser && (
-          <TouchableOpacity 
-            style={styles.addStoryButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              setCreateStoryModalVisible(true);
-            }}
-          >
-            <Text style={styles.addStoryText}>+</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      <Text style={styles.storyUsername} numberOfLines={1}>
-        {item.isUser ? 'Your Story' : item.name}
-      </Text>
-    </TouchableOpacity>
+    }, [fetchPosts, isAuthenticated])
   );
 
-  // Full Screen Story Viewer
-  const renderFullScreenStory = () => {
-    if (!currentStory) return null;
-    
-    const currentStoryItem = currentStory.stories[currentStoryIndex];
-    
-    return (
-      <Modal
-        visible={storyModalVisible}
-        animationType="fade"
-        transparent={false}
-        statusBarTranslucent={true}
-        onRequestClose={closeStory}
-      >
-        <View style={styles.fullScreenStoryContainer}>
-          {/* Progress Bars */}
-          <View style={styles.progressBarContainer}>
-            {currentStory.stories.map((_, index) => (
-              <View key={index} style={styles.progressBar}>
-                <View 
-                  style={[
-                    styles.progressBarFill,
-                    { 
-                      width: index === currentStoryIndex 
-                        ? `${progress}%` 
-                        : index < currentStoryIndex ? '100%' : '0%' 
-                    }
-                  ]} 
-                />
-              </View>
-            ))}
-          </View>
-
-          {/* Story Header */}
-          <View style={styles.storyHeader}>
-            <Image 
-              source={{ uri: currentStory.avatar }} 
-              style={styles.storyAvatar}
-            />
-            <View style={styles.storyUserInfo}>
-              <Text style={styles.storyName}>{currentStory.name}</Text>
-              <Text style={styles.storyTime}>{currentStoryItem.timestamp}</Text>
-            </View>
-          </View>
-
-          {/* Story Content - Full Screen */}
-          <Image 
-            source={{ uri: currentStoryItem.url }} 
-            style={styles.storyContent}
-            resizeMode="cover"
-          />
-
-          {/* Navigation Areas */}
-          <TouchableOpacity 
-            style={[styles.storyNavigation, { left: 0 }]}
-            onPress={previousStory}
-          />
-          <TouchableOpacity 
-            style={[styles.storyNavigation, { right: 0 }]}
-            onPress={nextStory}
-          />
-
-          {/* Close Button */}
-          <TouchableOpacity 
-            style={styles.closeButton}
-            onPress={closeStory}
-          >
-            <Text style={styles.closeButtonText}>×</Text>
-          </TouchableOpacity>
-
-          {/* Action Buttons */}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.actionButton}>
-              <Text style={styles.actionButtonText}>❤️</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
-              <Text style={styles.actionButtonText}>💬</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
-              <Text style={styles.actionButtonText}>📤</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
-
-  // Story Creation Modal
-  const renderCreateStoryModal = () => (
-    <Modal
-      visible={createStoryModalVisible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={() => setCreateStoryModalVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.createStoryModal}>
-          <Text style={styles.createStoryTitle}>Create New Story</Text>
-          
-          {/* Image Upload */}
-          {Platform.OS === 'web' ? (
-            <>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                style={{ display: 'none' }}
-                id="story-upload"
-              />
-              <label htmlFor="story-upload">
-                <View style={styles.fileInput}>
-                  <Text style={styles.fileInputText}>
-                    {storyImage ? 'Change Image' : 'Choose Image'}
-                  </Text>
-                </View>
-              </label>
-            </>
-          ) : (
-            <TouchableOpacity 
-              style={styles.fileInput}
-              onPress={() => Alert.alert('Info', 'Image picker would open here')}
-            >
-              <Text style={styles.fileInputText}>
-                {storyImage ? 'Change Image' : 'Choose Image'}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Image Preview */}
-          {storyImage && (
-            <Image 
-              source={{ uri: storyImage }} 
-              style={styles.storyPreview}
-              resizeMode="cover"
-            />
-          )}
-
-          {/* Content Input */}
-          <TextInput
-            style={styles.storyInput}
-            placeholder="Add a caption (optional)"
-            value={newStory.content}
-            onChangeText={(text) => setNewStory(prev => ({ ...prev, content: text }))}
-            placeholderTextColor={colors.textSecondary}
-            multiline
-          />
-
-          {/* Buttons */}
-          <View style={styles.buttonRow}>
-            <TouchableOpacity 
-              style={styles.secondaryButton}
-              onPress={() => setCreateStoryModalVisible(false)}
-            >
-              <Text style={styles.secondaryButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.primaryButton}
-              onPress={createNewStory}
-              disabled={!storyImage}
-            >
-              <Text style={styles.primaryButtonText}>Post Story</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  // Post Functions
+  // Fixed Like/Unlike Post
   const likePost = async (postId: string) => {
     try {
-      const token = await getToken();
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/posts/${postId}/like`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        method: "POST",
+        headers: headers as HeadersInit,
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          // Update local state
-          setPosts(posts.map(post => {
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Update local state
+        setPosts(prevPosts =>
+          prevPosts.map(post => {
             if (post._id === postId) {
-              const wasLiked = post.isLiked;
-              return { 
-                ...post, 
-                likes: wasLiked ? post.likes - 1 : post.likes + 1,
-                isLiked: !wasLiked
+              const hasLiked = post.isLiked;
+              return {
+                ...post,
+                likes: hasLiked ? post.likes - 1 : post.likes + 1,
+                isLiked: !hasLiked
               };
             }
             return post;
-          }));
-        }
+          })
+        );
+      } else {
+        throw new Error(data.message || "Failed to like post");
       }
     } catch (error) {
-      console.error('Error liking post:', error);
+      console.error("Error liking post:", error);
+      Alert.alert("Error", "Failed to like post");
     }
   };
 
+  // Fixed Comment on Post
   const addComment = async (postId: string) => {
-    if (!newComment.trim()) return;
+    if (!newComment.trim()) {
+      Alert.alert("Error", "Please enter a comment");
+      return;
+    }
 
     try {
-      const token = await getToken();
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/posts/${postId}/comment`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+          ...headers,
+          'Content-Type': 'application/json',
+        } as HeadersInit,
         body: JSON.stringify({ content: newComment })
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          // Update local state
-          setPosts(posts.map(post => {
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Update local state with the returned comment data
+        setPosts(prevPosts =>
+          prevPosts.map(post => {
             if (post._id === postId) {
               return {
                 ...post,
                 comments: post.comments + 1,
-                commentsList: [...post.commentsList, {
-                  id: data.comment._id,
-                  username: 'currentuser',
-                  name: 'You',
-                  comment: newComment,
-                  time: 'Just now'
-                }]
+                commentsList: [
+                  ...post.commentsList,
+                  {
+                    id: data.comment._id,
+                    username: data.comment.user?.name?.toLowerCase().replace(/\s+/g, '') || 'user',
+                    name: data.comment.user?.name || 'You',
+                    comment: data.comment.content,
+                    time: 'Just now'
+                  }
+                ]
               };
             }
             return post;
-          }));
-          setNewComment('');
-          setCommentModalVisible(false);
-        }
+          })
+        );
+        setNewComment('');
+        setCommentModalVisible(false);
+        Alert.alert("Success", "Comment added successfully");
+      } else {
+        throw new Error(data.message || "Failed to add comment");
       }
     } catch (error) {
-      console.error('Error adding comment:', error);
+      console.error("Error adding comment:", error);
+      Alert.alert("Error", "Failed to add comment");
     }
   };
 
+  // Fixed Share Post
   const sharePost = async (post: Post) => {
-    const postLink = `https://socialapp.com/post/${post.id}`;
-    
-    if (Platform.OS === 'web') {
-      navigator.clipboard.writeText(postLink);
-      Alert.alert('Link Copied!', 'Post link has been copied to clipboard.');
-    } else {
-      try {
-        await Sharing.shareAsync(postLink);
-      } catch (error) {
-        Clipboard.setStringAsync(postLink);
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/posts/${post._id}/share`, {
+        method: "POST",
+        headers: headers as HeadersInit,
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Update local state
+        setPosts(prevPosts =>
+          prevPosts.map(p => {
+            if (p._id === post._id) {
+              return {
+                ...p,
+                shares: p.shares + 1
+              };
+            }
+            return p;
+          })
+        );
+        Alert.alert("Success", "Post shared successfully");
+      } else {
+        throw new Error(data.message || "Failed to share post");
+      }
+    } catch (error) {
+      console.error("Error sharing post:", error);
+      
+      // Fallback: Copy post link to clipboard
+      const postLink = `https://socialapp.com/post/${post.id}`;
+      if (Platform.OS === 'web') {
+        navigator.clipboard.writeText(postLink);
         Alert.alert('Link Copied!', 'Post link has been copied to clipboard.');
+      } else {
+        try {
+          await Sharing.shareAsync(postLink);
+        } catch (shareError) {
+          Clipboard.setStringAsync(postLink);
+          Alert.alert('Link Copied!', 'Post link has been copied to clipboard.');
+        }
       }
     }
   };
@@ -1345,6 +1071,14 @@ export default function HomeScreen() {
   const openOptions = (post: Post) => {
     setSelectedPostForOptions(post);
     setOptionsModalVisible(true);
+  };
+
+  // NEW: Navigate to messages screen and clear notifications
+  const navigateToMessages = () => {
+    // Clear the badge when user goes to messages
+    setUnreadMessageCount(0);
+    setNewMessageNotification(null);
+    router.push('/(tabs)/messages');
   };
 
   const renderPost = ({ item }: { item: Post }) => (
@@ -1392,50 +1126,67 @@ export default function HomeScreen() {
         >
           <Text style={styles.actionText}>💬 {item.comments}</Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.action}>
-          <Text style={styles.actionText}>🔄</Text>
-        </TouchableOpacity>
-        
+
         <TouchableOpacity 
           style={styles.action}
           onPress={() => sharePost(item)}
         >
-          <Text style={styles.actionText}>📤</Text>
+            <Ionicons name="share-outline" size={16} color={colors.primary} />
         </TouchableOpacity>
       </View>
     </View>
   );
 
-  const HeaderComponent = () => (
-    <View style={styles.header}>
-      {/* Stories Section */}
-      <View style={styles.storiesSection}>
-        <FlatList
-          data={stories}
-          renderItem={renderStory}
-          keyExtractor={item => item.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.storiesList}
-        />
-      </View>
-    </View>
-  );
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading posts...</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
+      {/* NEW: Message Notification Popup */}
+      {newMessageNotification?.show && (
+        <TouchableOpacity 
+          style={styles.popupNotification}
+          onPress={handleNotificationPress}
+        >
+          <View style={styles.notificationContent}>
+            <Image 
+              source={{ 
+                uri: newMessageNotification.message.sender?.profilePicture || 
+                'https://via.placeholder.com/40x40/007AFF/FFFFFF?text=U'
+              }}
+              style={styles.notificationAvatar}
+            />
+            <View style={styles.notificationTextContainer}>
+              <Text style={styles.notificationName}>
+                {newMessageNotification.message.sender?.name || 'User'}
+              </Text>
+              <Text style={styles.notificationMessage} numberOfLines={1}>
+                {newMessageNotification.message.content}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setNewMessageNotification(null)}>
+              <Ionicons name="close" size={20} color="white" />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* Updated Header with Message Icon and Notification Badge */}
       <View style={styles.appHeader}>
         <Text style={styles.appTitle}>SmartConnect</Text>
+        <View style={styles.headerIcons}>
+          <TouchableOpacity 
+            style={styles.messageIcon}
+            onPress={navigateToMessages}
+          >
+            <Ionicons name="chatbubble-outline" size={24} color={colors.text} />
+            {/* Notification Badge */}
+            {unreadMessageCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationText}>
+                  {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
       
       <FlatList
@@ -1443,15 +1194,42 @@ export default function HomeScreen() {
         renderItem={renderPost}
         keyExtractor={item => item.id}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={HeaderComponent}
+        ListHeaderComponent={() => (
+          <View style={styles.storiesSection}>
+            <FlatList
+              data={stories}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.storyContainer}>
+                  <View style={[
+                    styles.storyCircle,
+                    item.hasNewStory ? styles.hasNewStory : styles.seenStory,
+                  ]}>
+                    <Image 
+                      source={{ uri: item.avatar }} 
+                      style={styles.storyImage}
+                    />
+                    {item.isUser && (
+                      <TouchableOpacity style={styles.addStoryButton}>
+                        <Text style={styles.addStoryText}>+</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <Text style={styles.storyUsername} numberOfLines={1}>
+                    {item.isUser ? 'Your Story' : item.name}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              keyExtractor={item => item.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.storiesList}
+            />
+          </View>
+        )}
         contentContainerStyle={styles.listContent}
         refreshing={loading}
         onRefresh={fetchPosts}
       />
-      
-      {/* Story Modals */}
-      {renderFullScreenStory()}
-      {renderCreateStoryModal()}
       
       {/* Comments Modal */}
       <Modal

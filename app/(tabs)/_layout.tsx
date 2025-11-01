@@ -1,41 +1,221 @@
 import { useThemeStyles } from "@/hooks/useThemeStyles";
 import { Ionicons } from "@expo/vector-icons";
+import { NavigationState } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
-import { Tabs, useRouter } from "expo-router";
-import React, { useRef, useState } from "react";
+import { Tabs, useNavigation, useRouter } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
-  Animated,
   Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { io, Socket } from 'socket.io-client';
+import { useAuth } from '../context/AuthContext';
+
+interface FriendRequest {
+  _id: string;
+  requesterId: string;
+  recipientId: string;
+  status: string;
+  createdAt: string;
+  requester?: {
+    _id: string;
+    name: string;
+    profilePicture?: string;
+  };
+}
 
 export default function TabLayout() {
   const { colors } = useThemeStyles();
-  const router = useRouter();
-  const [isOpen, setIsOpen] = useState(false);
-  const animation = useRef(new Animated.Value(0)).current;
+  const { user, getAuthHeaders } = useAuth();
+  const navigation = useNavigation();
+  
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [friendRequestsCount, setFriendRequestsCount] = useState(0);
+  const socketRef = useRef<Socket | null>(null);
+const router = useRouter();
+  // Get token from auth headers
+  const getToken = async (): Promise<string | null> => {
+    try {
+      const authHeaders = await getAuthHeaders();
+      const headers = authHeaders as Record<string, string>;
+      
+      const authKey = Object.keys(headers).find(
+        key => key.toLowerCase() === 'authorization'
+      );
+      
+      const authHeader = authKey ? headers[authKey] : null;
+      
+      if (!authHeader) {
+        return null;
+      }
 
-  const toggleMenu = () => {
-    const toValue = isOpen ? 0 : 1;
-
-    Animated.spring(animation, {
-      toValue,
-      friction: 5,
-      useNativeDriver: true,
-    }).start();
-
-    setIsOpen(!isOpen);
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+      return token || null;
+    } catch (error) {
+      console.error('Error getting token:', error);
+      return null;
+    }
   };
+
+  // Fetch friend requests count
+  const fetchFriendRequestsCount = async () => {
+    try {
+      const authHeaders = await getAuthHeaders();
+      const headers = {
+        ...authHeaders,
+        'Content-Type': 'application/json',
+      };
+
+      const response = await fetch('http://localhost:3000/friends/requests', {
+        method: 'GET',
+        headers,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setFriendRequestsCount(data.requests?.length || 0);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching friend requests count:', error);
+    }
+  };
+
+  // Initialize WebSocket for real-time notifications and friend requests
+  useEffect(() => {
+    const initializeWebSocket = async () => {
+      try {
+        const token = await getToken();
+        
+        if (!token) {
+          console.log('No token available for notifications');
+          return;
+        }
+
+        // Disconnect existing socket if any
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+        }
+
+        socketRef.current = io('http://localhost:3000', {
+          auth: { token },
+          transports: ['websocket', 'polling']
+        });
+
+        socketRef.current.on('connect', () => {
+          console.log('✅ Connected to WebSocket in TabLayout');
+          socketRef.current?.emit('subscribe_notifications');
+          socketRef.current?.emit('get_unread_count');
+        });
+
+        // Notification events
+        socketRef.current.on('unread_count_updated', (data) => {
+          console.log('🔄 Unread count updated in TabLayout:', data.unreadCount);
+          setUnreadCount(data.unreadCount);
+        });
+
+        socketRef.current.on('unread_count', (data) => {
+          console.log('📊 Initial unread count:', data.unreadCount);
+          setUnreadCount(data.unreadCount);
+        });
+
+        socketRef.current.on('new_notification', (data) => {
+          // When new notification arrives, increment count
+          setUnreadCount(prev => prev + 1);
+          
+          // If it's a friend request notification, also update friend requests count
+          if (data.notification?.type === 'friend_request') {
+            setFriendRequestsCount(prev => prev + 1);
+          }
+        });
+
+        // Friend request events (we'll simulate these since backend might not have specific events)
+        socketRef.current.on('friend_request_received', () => {
+          setFriendRequestsCount(prev => prev + 1);
+        });
+
+        socketRef.current.on('friend_request_accepted', () => {
+          // Optionally handle when someone accepts your friend request
+        });
+
+        socketRef.current.on('friend_request_declined', () => {
+          // Optionally handle when someone declines your friend request
+        });
+
+        socketRef.current.on('connect_error', (error) => {
+          console.error('❌ WebSocket connection error in TabLayout:', error);
+        });
+
+      } catch (error) {
+        console.error('Error initializing WebSocket in TabLayout:', error);
+      }
+    };
+
+    initializeWebSocket();
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, []);
+
+  // Fetch initial counts on component mount
+  useEffect(() => {
+    const fetchInitialCounts = async () => {
+      try {
+        const authHeaders = await getAuthHeaders();
+        const headers = {
+          ...authHeaders,
+          'Content-Type': 'application/json',
+        };
+
+        // Fetch unread notifications count
+        const notificationsResponse = await fetch('http://localhost:3000/notifications/unread-count', {
+          method: 'GET',
+          headers,
+        });
+
+        if (notificationsResponse.ok) {
+          const notificationsData = await notificationsResponse.json();
+          if (notificationsData.success) {
+            setUnreadCount(notificationsData.unreadCount);
+          }
+        }
+
+        // Fetch friend requests count
+        await fetchFriendRequestsCount();
+
+      } catch (error) {
+        console.error('Error fetching initial counts:', error);
+      }
+    };
+
+    fetchInitialCounts();
+  }, []);
+
+  // Listen for navigation events to refresh friend requests count
+ useEffect(() => {
+  const unsubscribe = navigation.addListener('state', (e) => {
+    const state = e.data.state as NavigationState;
+    const currentRoute = state.routes[state.index];
+    
+    // Check the current route name
+    if (currentRoute.name === 'friends' || currentRoute.name === 'notifications') {
+      fetchFriendRequestsCount();
+    }
+  });
+
+  return unsubscribe;
+}, [navigation]);
 
   const handleOpenCamera = async () => {
     try {
-      // Close menu first
-      toggleMenu();
-
       // First, check if we're on web
       if (Platform.OS === "web") {
         Alert.alert(
@@ -84,12 +264,8 @@ export default function TabLayout() {
     }
   };
 
-  // Alternative: Open image picker (gallery) instead of camera
   const handleOpenImagePicker = async () => {
     try {
-      // Close menu first
-      toggleMenu();
-
       // Request media library permissions
       const { status } =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -112,48 +288,17 @@ export default function TabLayout() {
 
       if (!result.canceled && result.assets && result.assets[0]) {
         console.log("Image selected:", result.assets[0].uri);
-        // Add a small delay to ensure menu is fully closed before navigation
-        setTimeout(() => {
-          router.push({
-            pathname: "/create-post",
-            params: { 
-              imageUri: result.assets[0].uri,
-              fromGallery: "true" 
-            },
-          });
-        }, 300);
+        router.push({
+          pathname: "/create-post",
+          params: { 
+            imageUri: result.assets[0].uri,
+            fromGallery: "true" 
+          },
+        });
       }
     } catch (error) {
       console.error("Error opening image picker:", error);
       Alert.alert("Error", "Failed to open gallery.");
-    }
-  };
-
-  // Updated handleAction to handle both camera and gallery
-  const handleAction = (action: string) => {
-    switch (action) {
-      case "post":
-        toggleMenu();
-        // Add delay for menu animation to complete
-        setTimeout(() => {
-          router.push("/create-post");
-        }, 300);
-        break;
-      case "photo":
-        // On web, use image picker. On mobile, use camera.
-        if (Platform.OS === "web") {
-          handleOpenImagePicker();
-        } else {
-          handleOpenCamera();
-        }
-        break;
-      case "location":
-        toggleMenu();
-        // Add delay for menu animation to complete
-        setTimeout(() => {
-          handleOpenLocation();
-        }, 300);
-        break;
     }
   };
 
@@ -202,60 +347,50 @@ export default function TabLayout() {
     );
   };
 
-  // Animation styles
-  const postStyle = {
-    transform: [
-      { scale: animation },
-      {
-        translateX: animation.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, -90],
-        }),
-      },
-      {
-        translateY: animation.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, 0],
-        }),
-      },
-    ],
-  };
+  // Custom Notification Icon with Badge
+  const NotificationIconWithBadge = ({ color, focused }: { color: string; focused: boolean }) => (
+    <View style={focused ? styles.activeIcon : styles.icon}>
+      <Ionicons
+        name={focused ? "notifications" : "notifications-outline"}
+        color={color}
+        size={24}
+      />
+      {unreadCount > 0 && (
+        <View style={[
+          styles.badge,
+          unreadCount > 9 && styles.badgeLarge,
+          unreadCount > 99 && styles.badgeExtraLarge
+        ]}>
+          <Text style={styles.badgeText}>
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
 
-  const photoStyle = {
-    transform: [
-      { scale: animation },
-      {
-        translateX: animation.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, 0],
-        }),
-      },
-      {
-        translateY: animation.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, -90],
-        }),
-      },
-    ],
-  };
-
-  const locationStyle = {
-    transform: [
-      { scale: animation },
-      {
-        translateX: animation.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, 90],
-        }),
-      },
-      {
-        translateY: animation.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, 0],
-        }),
-      },
-    ],
-  };
+  // Custom Friends Icon with Badge
+  const FriendsIconWithBadge = ({ color, focused }: { color: string; focused: boolean }) => (
+    <View style={focused ? styles.activeIcon : styles.icon}>
+      <Ionicons
+        name={focused ? "people" : "people-outline"}
+        color={color}
+        size={24}
+      />
+      {friendRequestsCount > 0 && (
+        <View style={[
+          styles.badge,
+          styles.friendsBadge,
+          friendRequestsCount > 9 && styles.badgeLarge,
+          friendRequestsCount > 99 && styles.badgeExtraLarge
+        ]}>
+          <Text style={styles.badgeText}>
+            {friendRequestsCount > 99 ? '99+' : friendRequestsCount}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
 
   return (
     <>
@@ -270,8 +405,6 @@ export default function TabLayout() {
             backgroundColor: colors.background,
             borderTopWidth: 1,
             borderTopColor: colors.border,
-            zIndex: 10,
-            elevation: 10,
           },
         }}
       >
@@ -296,29 +429,47 @@ export default function TabLayout() {
           options={{
             title: "Friends",
             tabBarIcon: ({ color, focused }) => (
-              <View style={focused ? styles.activeIcon : styles.icon}>
-                <Ionicons
-                  name={focused ? "people" : "people-outline"}
-                  color={color}
-                  size={24}
-                />
-              </View>
+              <FriendsIconWithBadge color={color} focused={focused} />
             ),
           }}
         />
 
-        {/* Hidden screens - these won't appear in tab bar but routing still works */}
+        {/* Create Post Tab */}
         <Tabs.Screen
           name="create-post"
           options={{
-            href: null,
-          }}
-        />
-
-        <Tabs.Screen
-          name="map"
-          options={{
-            href: null,
+            title: "Create",
+            tabBarIcon: ({ color, focused }) => (
+              <TouchableOpacity
+                style={styles.createButton}
+                onPress={() => {
+                  Alert.alert(
+                    "Create Post",
+                    "Choose how you want to create your post",
+                    [
+                      {
+                        text: "Take Photo",
+                        onPress: handleOpenCamera,
+                      },
+                      {
+                        text: "Choose from Gallery",
+                        onPress: handleOpenImagePicker,
+                      },
+                      {
+                        text: "Text Only",
+                        onPress: () => router.push("/create-post"),
+                      },
+                      {
+                        text: "Cancel",
+                        style: "cancel",
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Text style={styles.createButtonText}>+</Text>
+              </TouchableOpacity>
+            ),
           }}
         />
 
@@ -327,13 +478,7 @@ export default function TabLayout() {
           options={{
             title: "Notifications",
             tabBarIcon: ({ color, focused }) => (
-              <View style={focused ? styles.activeIcon : styles.icon}>
-                <Ionicons
-                  name={focused ? "notifications" : "notifications-outline"}
-                  color={color}
-                  size={24}
-                />
-              </View>
+              <NotificationIconWithBadge color={color} focused={focused} />
             ),
           }}
         />
@@ -353,6 +498,14 @@ export default function TabLayout() {
             ),
           }}
         />
+
+        {/* Hidden screens */}
+        <Tabs.Screen
+          name="map"
+          options={{
+            href: null,
+          }}
+        />
         
         <Tabs.Screen
           name="profile"
@@ -360,63 +513,25 @@ export default function TabLayout() {
             href: null,
           }}
         />
+        <Tabs.Screen
+          name="messages"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="chat/[id]" 
+          options={{ 
+            href: null,
+          }} 
+        />
+        <Tabs.Screen
+          name="UserProfileScreen"
+          options={{
+            href: null,
+          }}
+        />
       </Tabs>
-
-      <View style={styles.fabContainer} pointerEvents="box-none">
-        {/* Left - Post */}
-        <Animated.View
-          style={[styles.fabOption, postStyle]}
-          pointerEvents={isOpen ? "auto" : "none"}
-        >
-          <TouchableOpacity
-            style={styles.fabOptionButton}
-            onPress={() => handleAction("post")}
-          >
-            <Text style={styles.fabOptionText}>📝</Text>
-            <Text style={styles.fabOptionLabel}>Post</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Up - Photo */}
-        <Animated.View
-          style={[styles.fabOption, photoStyle]}
-          pointerEvents={isOpen ? "auto" : "none"}
-        >
-          <TouchableOpacity
-            style={styles.fabOptionButton}
-            onPress={() => handleAction("photo")}
-          >
-            <Text style={styles.fabOptionText}>
-              {Platform.OS === "web" ? "🖼️" : "📷"}
-            </Text>
-            <Text style={styles.fabOptionLabel}>
-              {Platform.OS === "web" ? "Gallery" : "Camera"}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Right - Location */}
-        <Animated.View
-          style={[styles.fabOption, locationStyle]}
-          pointerEvents={isOpen ? "auto" : "none"}
-        >
-          <TouchableOpacity
-            style={styles.fabOptionButton}
-            onPress={() => handleAction("location")}
-          >
-            <Text style={styles.fabOptionText}>🚏</Text>
-            <Text style={styles.fabOptionLabel}>Location</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Center FAB */}
-        <TouchableOpacity
-          style={[styles.fab, isOpen && styles.fabOpen]}
-          onPress={toggleMenu}
-        >
-          <Text style={styles.fabText}>{isOpen ? "×" : "+"}</Text>
-        </TouchableOpacity>
-      </View>
     </>
   );
 }
@@ -424,72 +539,62 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   icon: {
     padding: 8,
+    position: 'relative',
   },
   activeIcon: {
     padding: 8,
     backgroundColor: "rgba(255, 55, 95, 0.1)",
     borderRadius: 20,
+    position: 'relative',
   },
-  fabContainer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 5,
-  },
-  fab: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#ff375f",
+  createButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#6366F1",
     justifyContent: "center",
     alignItems: "center",
+    marginBottom: 20,
     elevation: 8,
     shadowColor: "#ff375f",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
   },
-  fabOpen: {
-    backgroundColor: "#ff375f",
-    transform: [{ rotate: "45deg" }],
-  },
-  fabText: {
+  createButtonText: {
     color: "white",
     fontSize: 28,
     fontWeight: "300",
   },
-  fabOption: {
-    position: "absolute",
-    backgroundColor: "#111111",
-    borderRadius: 30,
-    width: 70,
-    height: 70,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 5,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
+  badge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
-  fabOptionButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-    height: "100%",
+  friendsBadge: {
+    backgroundColor: '#007AFF', // Blue color for friend requests
   },
-  fabOptionText: {
-    fontSize: 20,
-    marginBottom: 4,
+  badgeLarge: {
+    minWidth: 22,
+    height: 18,
   },
-  fabOptionLabel: {
+  badgeExtraLarge: {
+    minWidth: 26,
+    height: 18,
+  },
+  badgeText: {
+    color: '#FFFFFF',
     fontSize: 10,
-    color: "#ffffff",
-    fontWeight: "500",
+    fontWeight: 'bold',
+    textAlign: 'center',
+    paddingHorizontal: 4,
   },
 });

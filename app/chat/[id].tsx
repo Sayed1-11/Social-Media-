@@ -2,18 +2,19 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import io, { Socket } from "socket.io-client";
 import { useThemeStyles } from "../../hooks/useThemeStyles";
@@ -46,6 +47,17 @@ interface Conversation {
   unreadCounts?: Array<{ userId: string; count: number }>;
 }
 
+interface CallData {
+  callId: string;
+  callerId: string;
+  recipientId: string;
+  callType: 'audio' | 'video';
+  conversationId: string;
+  status: 'ringing' | 'active' | 'ended';
+  callerInfo?: Participant;
+  recipientInfo?: Participant;
+}
+
 export default function ChatScreen() {
   const { theme, toggleTheme, setTheme } = useTheme();
   const { colors, isDark } = useThemeStyles();
@@ -62,50 +74,54 @@ export default function ChatScreen() {
   const [participant, setParticipant] = useState<Participant | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   
+  // Call states
+  const [incomingCall, setIncomingCall] = useState<CallData | null>(null);
+  const [activeCall, setActiveCall] = useState<CallData | null>(null);
+  const [isCallModalVisible, setIsCallModalVisible] = useState(false);
+  const [callStatus, setCallStatus] = useState<'idle' | 'ringing' | 'connecting' | 'active' | 'ended'>('idle');
+  const [isMuted, setIsMuted] = useState(false);
+  const [isVideoOff, setIsVideoOff] = useState(false);
+  const [callDuration, setCallDuration] = useState(0);
+  
   const flatListRef = useRef<FlatList>(null);
   const socketRef = useRef<Socket | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const callDurationRef = useRef<NodeJS.Timeout | null>(null);
 
   const styles = createStyles(colors);
 
   // Get token from auth headers
-// Get token from auth headers - Fixed version
-const getToken = useCallback(async (): Promise<string | null> => {
-  try {
-    const authHeaders = await getAuthHeaders();
-    
-    // Type assertion to safely access properties
-    const headers = authHeaders as Record<string, string>;
-    
-    // Find authorization header (case insensitive)
-    const authKey = Object.keys(headers).find(
-      key => key.toLowerCase() === 'authorization'
-    );
-    
-    const authHeader = authKey ? headers[authKey] : null;
-    
-    if (!authHeader) {
-      console.log('No Authorization header found. Available headers:', Object.keys(headers));
+  const getToken = useCallback(async (): Promise<string | null> => {
+    try {
+      const authHeaders = await getAuthHeaders();
+      
+      const headers = authHeaders as Record<string, string>;
+      
+      const authKey = Object.keys(headers).find(
+        key => key.toLowerCase() === 'authorization'
+      );
+      
+      const authHeader = authKey ? headers[authKey] : null;
+      
+      if (!authHeader) {
+        console.log('No Authorization header found. Available headers:', Object.keys(headers));
+        return null;
+      }
+
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+      
+      if (!token) {
+        console.log('Empty token found in Authorization header');
+        return null;
+      }
+      
+      console.log('✅ Token extracted successfully');
+      return token;
+    } catch (error) {
+      console.error('❌ Error getting token from auth headers:', error);
       return null;
     }
-
-    // Extract token from "Bearer <token>"
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    
-    if (!token) {
-      console.log('Empty token found in Authorization header');
-      return null;
-    }
-    
-    console.log('✅ Token extracted successfully');
-    return token;
-  } catch (error) {
-    console.error('❌ Error getting token from auth headers:', error);
-    return null;
-  }
-}, [getAuthHeaders]);
-
-
+  }, [getAuthHeaders]);
 
   // Initialize WebSocket connection
   const initializeSocket = useCallback(async () => {
@@ -143,9 +159,7 @@ const getToken = useCallback(async (): Promise<string | null> => {
         console.log('Received new message via WebSocket:', data);
         
         if (data.conversationId === conversation._id) {
-          // Add new message to the list
           setMessages(prev => {
-            // Check if message already exists (to avoid duplicates)
             const messageExists = prev.some(msg => msg._id === data.message._id);
             if (messageExists) return prev;
             
@@ -155,7 +169,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
             }];
           });
 
-          // Mark message as read if it's from other participant
           const senderId = data.message.senderId?._id || data.message.senderId;
           if (senderId !== user?.id) {
             markMessagesAsRead();
@@ -171,7 +184,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
 
       socketRef.current.on('messages_read', (data) => {
         if (data.conversationId === conversation._id) {
-          // Update message read status
           setMessages(prev => prev.map(msg => {
             const senderId = msg.senderId?._id || msg.senderId;
             if (senderId !== user?.id && !msg.readBy?.includes(data.readBy)) {
@@ -196,6 +208,45 @@ const getToken = useCallback(async (): Promise<string | null> => {
         }
       });
 
+      // **CALL HANDLERS**
+      socketRef.current.on('incoming_call', (data: CallData) => {
+        console.log('Incoming call:', data);
+        setIncomingCall(data);
+        setIsCallModalVisible(true);
+        setCallStatus('ringing');
+      });
+
+      socketRef.current.on('call_initiated', (data) => {
+        console.log('Call initiated successfully:', data);
+        setCallStatus('ringing');
+        setActiveCall(prev => prev ? { ...prev, callId: data.callId } : null);
+      });
+
+      socketRef.current.on('call_accepted', (data) => {
+        console.log('Call accepted by recipient:', data);
+        setCallStatus('active');
+        setIncomingCall(null);
+        startCallTimer();
+      });
+
+      socketRef.current.on('call_rejected', (data) => {
+        console.log('Call rejected:', data);
+        Alert.alert('Call Rejected', data.reason || 'The call was rejected');
+        endCall();
+      });
+
+      socketRef.current.on('call_ended', (data) => {
+        console.log('Call ended:', data);
+        Alert.alert('Call Ended', data.reason || 'The call has ended');
+        endCall();
+      });
+
+      socketRef.current.on('call_failed', (data) => {
+        console.log('Call failed:', data);
+        Alert.alert('Call Failed', data.message || 'Failed to initiate call');
+        endCall();
+      });
+
       socketRef.current.on('connect_error', (error) => {
         console.error('WebSocket connection error:', error);
       });
@@ -203,7 +254,122 @@ const getToken = useCallback(async (): Promise<string | null> => {
     } catch (error) {
       console.error('Error initializing WebSocket:', error);
     }
-  }, [conversation?._id, user?.id, participantId, getToken]);
+  }, [conversation?._id, user?.id, participantId, getToken, activeCall]);
+
+  // Call Management Functions
+  const initiateCall = async (callType: 'audio' | 'video') => {
+    if (!conversation || !socketRef.current) {
+      Alert.alert('Error', 'Cannot make call at this time');
+      return;
+    }
+
+    try {
+      setCallStatus('connecting');
+      setActiveCall({
+        callId: '',
+        callerId: user!.id,
+        recipientId: participantId,
+        callType: callType,
+        conversationId: conversation._id,
+        status: 'ringing'
+      });
+      setIsCallModalVisible(true);
+
+      // Initiate call via socket
+      socketRef.current.emit('call_initiate', {
+        recipientId: participantId,
+        callType: callType,
+        conversationId: conversation._id
+      });
+
+    } catch (error) {
+      console.error('Error initiating call:', error);
+      Alert.alert('Error', 'Failed to start call.');
+      endCall();
+    }
+  };
+
+  const acceptCall = async () => {
+    if (!incomingCall || !socketRef.current) return;
+
+    try {
+      setActiveCall(incomingCall);
+      setCallStatus('active');
+      
+      // Accept call via socket
+      socketRef.current.emit('call_accept', {
+        callId: incomingCall.callId
+      });
+
+      setIncomingCall(null);
+      startCallTimer();
+
+    } catch (error) {
+      console.error('Error accepting call:', error);
+      Alert.alert('Error', 'Failed to accept call.');
+      endCall();
+    }
+  };
+
+  const rejectCall = () => {
+    if (!incomingCall || !socketRef.current) return;
+
+    socketRef.current.emit('call_reject', {
+      callId: incomingCall.callId,
+      reason: 'Declined'
+    });
+
+    setIncomingCall(null);
+    setIsCallModalVisible(false);
+    setCallStatus('idle');
+  };
+
+  const endCall = () => {
+    if (socketRef.current && activeCall) {
+      socketRef.current.emit('call_end', {
+        callId: activeCall.callId
+      });
+    }
+
+    setActiveCall(null);
+    setIncomingCall(null);
+    setIsCallModalVisible(false);
+    setCallStatus('idle');
+    stopCallTimer();
+    setIsMuted(false);
+    setIsVideoOff(false);
+  };
+
+  const toggleMute = () => {
+    setIsMuted(!isMuted);
+    // Implement actual mute logic with WebRTC here
+  };
+
+  const toggleVideo = () => {
+    setIsVideoOff(!isVideoOff);
+    // Implement actual video toggle logic with WebRTC here
+  };
+
+  // Call timer functions
+  const startCallTimer = () => {
+    callDurationRef.current = setInterval(() => {
+      setCallDuration(prev => prev + 1);
+    }, 1000);
+  };
+
+  const stopCallTimer = () => {
+    if (callDurationRef.current) {
+      clearInterval(callDurationRef.current);
+      callDurationRef.current = null;
+    }
+    setCallDuration(0);
+  };
+
+  const formatCallDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // Handle typing indicators
   const handleTypingStart = useCallback(() => {
@@ -213,7 +379,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
       conversationId: conversation._id
     });
 
-    // Clear existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
@@ -234,12 +399,10 @@ const getToken = useCallback(async (): Promise<string | null> => {
     if (!conversation?._id || !socketRef.current) return;
 
     try {
-      // Emit via WebSocket
       socketRef.current.emit('mark_messages_read', {
         conversationId: conversation._id
       });
 
-      // Also update via API
       const authHeaders = await getAuthHeaders();
       await fetch(
         `http://localhost:3000/conversations/${conversation._id}/read`,
@@ -249,7 +412,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
         }
       );
 
-      // Update local state
       setMessages(prev => prev.map(msg => {
         const senderId = msg.senderId?._id || msg.senderId;
         if (senderId !== user?.id) {
@@ -302,7 +464,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
         }
       }
 
-      // If no conversation exists, create one
       console.log('No conversation found, creating new one...');
       return await createConversation();
     } catch (error) {
@@ -463,7 +624,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
           };
         });
         
-        // Sort messages by createdAt in ascending order (oldest first)
         const sortedMessages = formattedMessages.sort((a: Message, b: Message) => 
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         );
@@ -486,7 +646,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
       setSending(true);
       const authHeaders = await getAuthHeaders();
       
-      // Optimistically add message to UI
       const tempMessage: Message = {
         _id: `temp-${Date.now()}`,
         content: newMessage.trim(),
@@ -496,14 +655,11 @@ const getToken = useCallback(async (): Promise<string | null> => {
         status: 'sent'
       };
 
-      // Add to the end of messages array (bottom of chat)
       setMessages(prev => [...prev, tempMessage]);
       setNewMessage("");
 
-      // Stop typing indicator
       handleTypingStop();
 
-      // Send to server
       const response = await fetch(
         `http://localhost:3000/messages`,
         {
@@ -526,7 +682,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
       console.log('Message sent successfully:', data);
       
       if (data.success) {
-        // Replace temporary message with real one from server
         setMessages(prev => 
           prev.map(msg => 
             msg._id === tempMessage._id 
@@ -543,7 +698,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
     } catch (error) {
       console.error('Error sending message:', error);
       Alert.alert('Error', 'Failed to send message');
-      // Remove temporary message on error
       setMessages(prev => prev.filter(msg => !msg._id.startsWith('temp-')));
     } finally {
       setSending(false);
@@ -569,17 +723,11 @@ const getToken = useCallback(async (): Promise<string | null> => {
         try {
           console.log('=== INITIALIZING CHAT ===');
           
-          // Step 1: Get or create conversation
           const conversationId = await getOrCreateConversation();
           
           if (conversationId) {
-            // Step 2: Ensure participant details are loaded
             await loadParticipantDetails();
-            
-            // Step 3: Get online status
             await getOnlineStatus();
-            
-            // Step 4: Load messages
             await fetchMessages(conversationId);
             
             console.log('=== CHAT INITIALIZED SUCCESSFULLY ===');
@@ -590,7 +738,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
         } catch (error) {
           console.error('Error initializing chat:', error);
           
-          // Even if conversation fails, try to at least load participant
           try {
             await loadParticipantDetails();
           } catch (participantError) {
@@ -617,13 +764,15 @@ const getToken = useCallback(async (): Promise<string | null> => {
       initializeSocket();
     }
 
-    // Cleanup on unmount
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
       }
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
+      }
+      if (callDurationRef.current) {
+        clearInterval(callDurationRef.current);
       }
     };
   }, [conversation?._id, initializeSocket]);
@@ -651,6 +800,134 @@ const getToken = useCallback(async (): Promise<string | null> => {
     }
   }, [messages]);
 
+  // Call buttons component
+  const renderCallButtons = () => (
+    <View style={styles.callButtonsContainer}>
+      <TouchableOpacity 
+        style={[styles.callButton, styles.audioCallButton]}
+        onPress={() => initiateCall('audio')}
+        disabled={!participant?.isOnline || callStatus !== 'idle'}
+      >
+        <Ionicons name="call" size={20} color="#fff" />
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={[styles.callButton, styles.videoCallButton]}
+        onPress={() => initiateCall('video')}
+        disabled={!participant?.isOnline || callStatus !== 'idle'}
+      >
+        <Ionicons name="videocam" size={20} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Call modal component
+  const renderCallModal = () => (
+    <Modal
+      visible={isCallModalVisible}
+      animationType="slide"
+      transparent={false}
+      statusBarTranslucent
+    >
+      <View style={styles.callContainer}>
+        {/* Call Info */}
+        <View style={styles.callInfoContainer}>
+          <Image 
+            source={{ uri: activeCall?.callerInfo?.profilePicture || incomingCall?.callerInfo?.profilePicture || participant?.profilePicture }} 
+            style={styles.callAvatar}
+            
+          />
+          <Text style={styles.callUserName}>
+            {activeCall?.callerInfo?.name || incomingCall?.callerInfo?.name || participant?.name || 'User'}
+          </Text>
+          
+          {callStatus === 'ringing' && incomingCall && (
+            <Text style={styles.callStatus}>Incoming {incomingCall.callType} call...</Text>
+          )}
+          
+          {callStatus === 'ringing' && activeCall && (
+            <Text style={styles.callStatus}>Calling...</Text>
+          )}
+          
+          {callStatus === 'connecting' && (
+            <Text style={styles.callStatus}>Connecting...</Text>
+          )}
+          
+          {callStatus === 'active' && (
+            <Text style={styles.callDuration}>
+              {formatCallDuration(callDuration)}
+            </Text>
+          )}
+        </View>
+
+        {/* Call Controls */}
+        <View style={styles.callControls}>
+          {incomingCall ? (
+            // Incoming call controls
+            <>
+              <TouchableOpacity 
+                style={[styles.callControlButton, styles.rejectCallButton]}
+                onPress={rejectCall}
+              >
+                <Ionicons name="call" size={30} color="#fff" />
+                <Text style={styles.callControlText}>Decline</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.callControlButton, styles.acceptCallButton]}
+                onPress={acceptCall}
+              >
+                <Ionicons name="call" size={30} color="#fff" />
+                <Text style={styles.callControlText}>Accept</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            // Active call controls
+            <>
+              <TouchableOpacity 
+                style={[styles.callControlButton, isMuted ? styles.callControlButtonActive : styles.muteButton]}
+                onPress={toggleMute}
+              >
+                <Ionicons 
+                  name={isMuted ? "mic-off" : "mic"} 
+                  size={30} 
+                  color="#fff" 
+                />
+                <Text style={styles.callControlText}>
+                  {isMuted ? 'Unmute' : 'Mute'}
+                </Text>
+              </TouchableOpacity>
+
+              {activeCall?.callType === 'video' && (
+                <TouchableOpacity 
+                  style={[styles.callControlButton, isVideoOff ? styles.callControlButtonActive : styles.videoButton]}
+                  onPress={toggleVideo}
+                >
+                  <Ionicons 
+                    name={isVideoOff ? "videocam-off" : "videocam"} 
+                    size={30} 
+                    color="#fff" 
+                  />
+                  <Text style={styles.callControlText}>
+                    {isVideoOff ? 'Video On' : 'Video Off'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity 
+                style={[styles.callControlButton, styles.endCallButton]}
+                onPress={endCall}
+              >
+                <Ionicons name="call" size={30} color="#fff" />
+                <Text style={styles.callControlText}>End</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+
   const renderMessage = ({ item }: { item: Message }) => {
     let senderId: string;
     
@@ -668,7 +945,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
         styles.messageContainer,
         isMyMessage ? styles.myMessageContainer : styles.theirMessageContainer
       ]}>
-        {/* Show avatar only for OTHER person's messages on LEFT side */}
         {!isMyMessage && participant && (
           <View style={styles.avatarContainer}>
             {participant.profilePicture ? (
@@ -687,7 +963,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
           </View>
         )}
         
-        {/* Message bubble */}
         <View style={[
           styles.messageBubble,
           isMyMessage ? styles.myMessage : styles.theirMessage
@@ -719,7 +994,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
           </View>
         </View>
 
-        {/* Add empty space on the left for their messages to balance layout */}
         {!isMyMessage && <View style={styles.avatarSpacer} />}
       </View>
     );
@@ -792,7 +1066,6 @@ const getToken = useCallback(async (): Promise<string | null> => {
                 </Text>
               </View>
             )}
-            {/* Online status indicator */}
             {participant.isOnline && (
               <View style={styles.onlineIndicator} />
             )}
@@ -809,6 +1082,9 @@ const getToken = useCallback(async (): Promise<string | null> => {
             </Text>
           </View>
         </View>
+
+        {/* Call buttons in header */}
+        {renderCallButtons()}
 
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="ellipsis-vertical" size={20} color={colors.text} />
@@ -894,11 +1170,13 @@ const getToken = useCallback(async (): Promise<string | null> => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Call Modal */}
+      {renderCallModal()}
     </SafeAreaView>
   );
 }
 
-// ... (keep the same styles as previous code)
 const createStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
@@ -1170,5 +1448,93 @@ const createStyles = (colors: any) => StyleSheet.create({
     height: 6,
     borderRadius: 3,
     marginHorizontal: 2,
+  },
+  // Call Button Styles
+  callButtonsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  callButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  audioCallButton: {
+    backgroundColor: '#4CAF50',
+  },
+  videoCallButton: {
+    backgroundColor: '#2196F3',
+  },
+  // Call Modal Styles
+  callContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'space-between',
+    paddingVertical: 60,
+  },
+  callInfoContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  callAvatar: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    marginBottom: 20,
+  },
+  callUserName: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  callStatus: {
+    color: '#fff',
+    fontSize: 16,
+    opacity: 0.8,
+  },
+  callDuration: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  callControls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingVertical: 30,
+    paddingHorizontal: 20,
+  },
+  callControlButton: {
+    alignItems: 'center',
+    marginHorizontal: 15,
+    padding: 15,
+    borderRadius: 35,
+  },
+  callControlButtonActive: {
+    opacity: 0.7,
+  },
+  callControlText: {
+    color: '#fff',
+    marginTop: 8,
+    fontSize: 12,
+  },
+  muteButton: {
+    backgroundColor: '#666',
+  },
+  videoButton: {
+    backgroundColor: '#666',
+  },
+  acceptCallButton: {
+    backgroundColor: '#4CAF50',
+  },
+  rejectCallButton: {
+    backgroundColor: '#F44336',
+  },
+  endCallButton: {
+    backgroundColor: '#F44336',
   },
 });

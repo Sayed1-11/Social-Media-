@@ -1,3 +1,7 @@
+import {
+  Carattere_400Regular,
+  useFonts,
+} from '@expo-google-fonts/carattere';
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -11,7 +15,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { io, Socket } from 'socket.io-client';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
@@ -82,6 +86,11 @@ export default function NotificationsScreen() {
   
   const socketRef = useRef<Socket | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Load Carattere font
+  let [fontsLoaded] = useFonts({
+    Carattere_400Regular,
+  });
 
   // Get token from auth headers
   const getToken = useCallback(async (): Promise<string | null> => {
@@ -432,6 +441,18 @@ export default function NotificationsScreen() {
     activeTab === 'all' ? true : !notification.isRead
   );
 
+  // Show loading while fonts are loading
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   // Render notification item
   const renderNotification = (notification: Notification, index: number) => {
     const config = getNotificationConfig(notification.type);
@@ -534,6 +555,10 @@ export default function NotificationsScreen() {
   if (loading && !refreshing) {
     return (
       <SafeAreaView style={styles.container}>
+        {/* App Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>SmartConnect</Text>
+        </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading notifications...</Text>
@@ -544,12 +569,17 @@ export default function NotificationsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* App Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>SmartConnect</Text>
+      </View>
+
       {/* Connection Status */}
       {/* Header */}
-      <View style={styles.header}>
+      <View style={styles.notificationsHeader}>
         <View>
-          <Text style={styles.headerTitle}>Notifications</Text>
-          <Text style={styles.headerSubtitle}>
+          <Text style={styles.notificationsHeaderTitle}>Notifications</Text>
+          <Text style={styles.notificationsHeaderSubtitle}>
             {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up! 🎉'}
           </Text>
         </View>
@@ -630,6 +660,42 @@ const createStyles = (colors: any) => StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  // App Header Styles
+  header: {
+    paddingTop: 15,
+    paddingBottom: 15,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    
+  },
+  headerTitle: {
+    fontSize: 32,
+    color: colors.primary,
+    fontFamily: "Carattere_400Regular",
+    includeFontPadding: false,
+  },
+  // Notifications Header
+  notificationsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  notificationsHeaderTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  notificationsHeaderSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
   connectionStatus: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -661,26 +727,6 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.primary,
     fontSize: 12,
     fontWeight: '600',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: colors.card,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 4,
   },
   markAllButton: {
     paddingHorizontal: 16,

@@ -5,9 +5,9 @@ export function useThemeStyles() {
 // Add this to your useThemeStyles hook or create a new theme file
 const colors = {
   light: {
-    primary: '#6366F1',    // Indigo - Main brand color
+    primary: '#4d4fcaff',    // Indigo - Main brand color
     secondary: '#10B981',  // Emerald - Accent color
-    accent: '#8B5CF6',     // Violet - Action color
+    accent: '#5a17f6ff',     // Violet - Action color
     background: '#FFFFFF',
     surface: '#F8FAFC',
     card: '#FFFFFF',

@@ -1,3 +1,7 @@
+import {
+  Carattere_400Regular,
+  useFonts,
+} from '@expo-google-fonts/carattere';
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -73,6 +77,9 @@ const getLocationIcon = (type: string): string => {
   return locationTypeIcons[type as LocationType] || locationTypeIcons.default;
 };
 
+// Post type enum
+type PostType = 'post' | 'reel';
+
 export default function CreatePostScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -89,6 +96,14 @@ export default function CreatePostScreen() {
   const [currentLocation, setCurrentLocation] = useState<string | null>(null);
   const [activeEmojiCategory, setActiveEmojiCategory] = useState(0);
   const [privacy, setPrivacy] = useState<"public" | "friends" | "private">("public");
+  const [postType, setPostType] = useState<PostType>('post');
+  const [videoDuration, setVideoDuration] = useState<number>(0);
+  const [videoThumbnail, setVideoThumbnail] = useState<string | null>(null);
+
+  // Load Carattere font
+  let [fontsLoaded] = useFonts({
+    Carattere_400Regular,
+  });
 
   const API_BASE_URL = 'http://localhost:3000';
 
@@ -101,6 +116,7 @@ export default function CreatePostScreen() {
       console.log("Setting selected image from params:", imageUri);
       setSelectedImage(imageUri);
       setSelectedVideo(null);
+      setPostType('post');
     }
   }, [params]);
 
@@ -151,12 +167,66 @@ export default function CreatePostScreen() {
     }
   };
 
-  // Upload image to server - FIXED IMPLEMENTATION
+  // Helper function to convert video URI to base64
+  const convertVideoToBase64 = async (uri: string): Promise<string> => {
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result as string;
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error('Error converting video to base64:', error);
+      throw new Error('Failed to process video');
+    }
+  };
+
+  // Generate thumbnail from video (simplified version)
+  const generateVideoThumbnail = async (videoUri: string): Promise<string> => {
+    try {
+      // For React Native, we can create a simple thumbnail by taking the first frame
+      // In a real app, you might use a library like react-native-video-thumbnail
+      console.log("Generating video thumbnail...");
+      
+      // For now, we'll create a placeholder or use the first frame if possible
+      // This is a simplified version - you might want to use a proper thumbnail generator
+      return await convertImageToBase64(videoUri); // This will create a base64 of the video file itself
+    } catch (error) {
+      console.error('Error generating thumbnail:', error);
+      return '';
+    }
+  };
+
+  // Get video duration and generate thumbnail
+  const getVideoInfo = async (videoUri: string): Promise<{ duration: number; thumbnail: string }> => {
+    return new Promise((resolve) => {
+      // In React Native, you might use a different approach to get video duration
+      // For now, we'll use a simplified version
+      const video = document.createElement('video');
+      video.src = videoUri;
+      video.onloadedmetadata = async () => {
+        const duration = video.duration;
+        const thumbnail = await generateVideoThumbnail(videoUri);
+        resolve({ duration, thumbnail });
+      };
+      video.onerror = () => {
+        resolve({ duration: 0, thumbnail: '' });
+      };
+    });
+  };
+
+  // Upload image to server
   const uploadImage = async (imageUri: string): Promise<string> => {
     try {
       console.log("Starting image upload...");
       
-      // Convert image to base64
       const base64Image = await convertImageToBase64(imageUri);
       
       const headers = await getAuthHeaders();
@@ -191,6 +261,55 @@ export default function CreatePostScreen() {
     }
   };
 
+  // Upload video to MongoDB
+  const uploadVideoToMongoDB = async (videoUri: string): Promise<{ videoId: string; duration: number }> => {
+    try {
+      console.log("Starting video upload to MongoDB...");
+      
+      const base64Video = await convertVideoToBase64(videoUri);
+      const videoInfo = await getVideoInfo(videoUri);
+      
+      setVideoDuration(videoInfo.duration);
+      setVideoThumbnail(videoInfo.thumbnail);
+      
+      const headers = await getAuthHeaders();
+      
+      const uploadResponse = await fetch(`${API_BASE_URL}/upload/video`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          video: base64Video,
+          thumbnail: videoInfo.thumbnail,
+          duration: videoInfo.duration,
+          aspectRatio: '9:16'
+        }),
+      });
+
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json();
+        throw new Error(errorData.message || `Video upload failed with status: ${uploadResponse.status}`);
+      }
+
+      const uploadData = await uploadResponse.json();
+      
+      if (!uploadData.success || !uploadData.video) {
+        throw new Error(uploadData.message || 'Failed to upload video');
+      }
+
+      console.log("Video uploaded successfully to MongoDB:", uploadData.video.id);
+      return {
+        videoId: uploadData.video.id,
+        duration: videoInfo.duration
+      };
+    } catch (error) {
+      console.error('Error uploading video to MongoDB:', error);
+      throw new Error('Failed to upload video. Please try again.');
+    }
+  };
+
   // Pick Image
   const pickImage = async () => {
     try {
@@ -214,6 +333,7 @@ export default function CreatePostScreen() {
       if (!result.canceled) {
         setSelectedImage(result.assets[0].uri);
         setSelectedVideo(null);
+        setPostType('post');
       }
     } catch (error) {
       Alert.alert("Error", "Failed to pick image");
@@ -236,13 +356,23 @@ export default function CreatePostScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         allowsEditing: true,
-        aspect: [16, 9],
+        aspect: [9, 16], // Vertical aspect ratio for reels
         quality: 0.8,
+        videoMaxDuration: 60, // 60 seconds max for reels
       });
 
       if (!result.canceled) {
-        setSelectedVideo(result.assets[0].uri);
+        const video = result.assets[0];
+        setSelectedVideo(video.uri);
         setSelectedImage(null);
+        setPostType('reel');
+        
+        // Get video info including duration and generate thumbnail
+        if (video.uri) {
+          const videoInfo = await getVideoInfo(video.uri);
+          setVideoDuration(videoInfo.duration);
+          setVideoThumbnail(videoInfo.thumbnail);
+        }
       }
     } catch (error) {
       Alert.alert("Error", "Failed to pick video");
@@ -286,6 +416,8 @@ export default function CreatePostScreen() {
   const removeMedia = () => {
     setSelectedImage(null);
     setSelectedVideo(null);
+    setVideoDuration(0);
+    setVideoThumbnail(null);
   };
 
   // Remove Location
@@ -305,55 +437,16 @@ export default function CreatePostScreen() {
     location.name.toLowerCase().includes(locationSearchQuery.toLowerCase())
   );
 
-
-const handleSubmit = async () => {
-  if (!postContent.trim() && !selectedImage && !selectedVideo) {
-    Alert.alert(
-      "Error",
-      "Please write something or add media before posting."
-    );
-    return;
-  }
-
-  if (postContent.length > 280) {
-    Alert.alert("Error", "Post must be less than 280 characters.");
-    return;
-  }
-
-  if (!isAuthenticated) {
-    Alert.alert("Error", "Please login to create a post.");
-    return;
-  }
-
-  setIsSubmitting(true);
-
-  try {
-    let imageBase64 = "";
-
-    // Convert image to base64 if selected
-    if (selectedImage) {
-      console.log("Converting image to base64...");
-      imageBase64 = await convertImageToBase64(selectedImage);
-      console.log("Image converted to base64");
-    }
-
-    // Prepare post data for API - send base64 directly
+  // Create regular post
+  const createPost = async (imageUrl?: string) => {
     const postData = {
       content: postContent,
-      image: imageBase64, // Send base64 directly
+      image: imageUrl || '',
       privacy: privacy,
       location: selectedLocation,
     };
 
-    console.log("Creating post with data:", {
-      content: postData.content,
-      hasImage: !!postData.image,
-      privacy: postData.privacy
-    });
-
     const headers = await getAuthHeaders();
-    
-    console.log("Sending request to:", `${API_BASE_URL}/posts`);
     
     const response = await fetch(`${API_BASE_URL}/posts`, {
       method: 'POST',
@@ -364,39 +457,114 @@ const handleSubmit = async () => {
       body: JSON.stringify(postData),
     });
 
-    console.log("Response status:", response.status);
-    
-    const data = await response.json();
-    console.log("Response data:", data);
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || `Server returned ${response.status}`);
+    }
 
-    if (response.ok && data.success) {
-      console.log("Post created successfully:", data);
-      
-      Alert.alert("Success", "Your post has been created!");
+    return await response.json();
+  };
+
+  // Create reel with MongoDB video
+  const createReel = async (videoId: string, duration: number) => {
+    const reelData = {
+      videoId: videoId,
+      content: postContent,
+      duration: duration,
+      privacy: privacy,
+      location: selectedLocation,
+    };
+
+    const headers = await getAuthHeaders();
+    
+    const response = await fetch(`${API_BASE_URL}/reels`, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(reelData),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || `Server returned ${response.status}`);
+    }
+
+    return await response.json();
+  };
+
+  const handleSubmit = async () => {
+    if (!postContent.trim() && !selectedImage && !selectedVideo) {
+      Alert.alert(
+        "Error",
+        "Please write something or add media before posting."
+      );
+      return;
+    }
+
+    if (postContent.length > 280) {
+      Alert.alert("Error", "Post must be less than 280 characters.");
+      return;
+    }
+
+    if (!isAuthenticated) {
+      Alert.alert("Error", "Please login to create a post.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      let result;
+
+      if (selectedImage) {
+        // Handle image post
+        console.log("Processing image post...");
+        const imageUrl = await uploadImage(selectedImage);
+        result = await createPost(imageUrl);
+        
+      } else if (selectedVideo) {
+        // Handle video reel with MongoDB storage
+        console.log("Processing video reel with MongoDB storage...");
+        const { videoId, duration } = await uploadVideoToMongoDB(selectedVideo);
+        result = await createReel(videoId, duration);
+        
+      } else {
+        // Handle text-only post
+        console.log("Processing text-only post...");
+        result = await createPost();
+      }
+
+      console.log("Creation successful:", result);
+
+      Alert.alert(
+        "Success", 
+        postType === 'reel' ? "Your reel has been created!" : "Your post has been created!"
+      );
       
       // Clear form
       setPostContent("");
       setSelectedImage(null);
       setSelectedVideo(null);
       setSelectedLocation(null);
+      setVideoDuration(0);
+      setVideoThumbnail(null);
       
       setTimeout(() => {
-        router.replace("/");
+        router.replace(postType === 'reel' ? "/reels" : "/");
       }, 500);
-    } else {
-      console.error("API Error:", data);
-      throw new Error(data.message || `Server returned ${response.status}`);
+      
+    } catch (error) {
+      console.error('Error creating content:', error);
+      Alert.alert(
+        "Error", 
+        error instanceof Error ? error.message : "Failed to create post. Please try again."
+      );
+    } finally {
+      setIsSubmitting(false);
     }
-  } catch (error) {
-    console.error('Error creating post:', error);
-    Alert.alert(
-      "Error", 
-      error instanceof Error ? error.message : "Failed to create post. Please try again."
-    );
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+  };
 
   const handleDraft = () => {
     if (postContent.trim() || selectedImage || selectedVideo) {
@@ -408,13 +576,69 @@ const handleSubmit = async () => {
   const characterCount = postContent.length;
   const characterLimit = 280;
 
+  // Show loading while fonts are loading
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#1DA1F2" />
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
+      {/* App Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>SmartConnect</Text>
+      </View>
+
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <Text style={styles.title}>Create New Post</Text>
+        <Text style={styles.title}>
+          {postType === 'reel' ? 'Create New Reel' : 'Create New Post'}
+        </Text>
+
+        {/* Post Type Selector */}
+        <View style={styles.postTypeContainer}>
+          <TouchableOpacity 
+            style={[
+              styles.postTypeOption, 
+              postType === 'post' && styles.postTypeOptionActive
+            ]}
+            onPress={() => {
+              setPostType('post');
+              if (selectedVideo) {
+                setSelectedVideo(null);
+                setVideoDuration(0);
+                setVideoThumbnail(null);
+              }
+            }}
+          >
+            <Text style={[
+              styles.postTypeOptionText,
+              postType === 'post' && styles.postTypeOptionTextActive
+            ]}>📝 Post</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[
+              styles.postTypeOption, 
+              postType === 'reel' && styles.postTypeOptionActive
+            ]}
+            onPress={() => {
+              setPostType('reel');
+              if (selectedImage) {
+                setSelectedImage(null);
+              }
+            }}
+          >
+            <Text style={[
+              styles.postTypeOptionText,
+              postType === 'reel' && styles.postTypeOptionTextActive
+            ]}>🎬 Reel</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Privacy Selector */}
         <View style={styles.privacyContainer}>
@@ -462,13 +686,13 @@ const handleSubmit = async () => {
         {/* Post Content Input */}
         <TextInput
           style={styles.textInput}
-          placeholder="What's happening?"
+          placeholder={postType === 'reel' ? "Describe your reel..." : "What's happening?"}
           value={postContent}
           onChangeText={setPostContent}
           multiline
           maxLength={characterLimit}
           textAlignVertical="top"
-          autoFocus={!selectedImage}
+          autoFocus={!selectedImage && !selectedVideo}
         />
 
         {/* Selected Media Preview */}
@@ -491,7 +715,18 @@ const handleSubmit = async () => {
           <View style={styles.mediaPreview}>
             <View style={styles.videoPreview}>
               <Text style={styles.videoPreviewText}>🎥 Video Selected</Text>
-              <Text style={styles.videoNote}>Note: Video upload not yet supported</Text>
+              <Text style={styles.videoInfo}>
+                Duration: {Math.round(videoDuration)}s | Reel
+              </Text>
+              <Text style={styles.videoNote}>
+                Video will be stored in MongoDB
+              </Text>
+              {videoThumbnail && (
+                <Image
+                  source={{ uri: videoThumbnail }}
+                  style={styles.thumbnailImage}
+                />
+              )}
             </View>
             <TouchableOpacity
               style={styles.removeMediaButton}
@@ -537,7 +772,7 @@ const handleSubmit = async () => {
           <TouchableOpacity
             style={[
               styles.button,
-              styles.postButton,
+              postType === 'reel' ? styles.reelButton : styles.postButton,
               (!postContent.trim() && !selectedImage && !selectedVideo) ||
               postContent.length > characterLimit ||
               isSubmitting
@@ -554,21 +789,36 @@ const handleSubmit = async () => {
             {isSubmitting ? (
               <ActivityIndicator color="white" size="small" />
             ) : (
-              <Text style={styles.postButtonText}>Post</Text>
+              <Text style={styles.postButtonText}>
+                {postType === 'reel' ? 'Create Reel' : 'Post'}
+              </Text>
             )}
           </TouchableOpacity>
         </View>
 
         {/* Media Options */}
         <View style={styles.features}>
-          <Text style={styles.featuresTitle}>Add to your post</Text>
+          <Text style={styles.featuresTitle}>Add to your {postType === 'reel' ? 'reel' : 'post'}</Text>
           <View style={styles.featureIcons}>
-            <TouchableOpacity style={styles.featureIcon} onPress={pickImage}>
-              <Text style={styles.featureIconText}>📷</Text>
+            <TouchableOpacity 
+              style={[
+                styles.featureIcon,
+                postType === 'reel' && styles.featureIconDisabled
+              ]} 
+              onPress={pickImage}
+              disabled={postType === 'reel'}
+            >
+              <Text style={[
+                styles.featureIconText,
+                postType === 'reel' && styles.featureIconTextDisabled
+              ]}>📷</Text>
               <Text style={styles.featureIconLabel}>Photo</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.featureIcon} onPress={pickVideo}>
+            <TouchableOpacity 
+              style={styles.featureIcon} 
+              onPress={pickVideo}
+            >
               <Text style={styles.featureIconText}>🎥</Text>
               <Text style={styles.featureIconLabel}>Video</Text>
             </TouchableOpacity>
@@ -748,6 +998,28 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
+  header: {
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  headerTitle: {
+    fontSize: 32,
+    color:'#4d4fcaff',
+    fontFamily: "Carattere_400Regular",
+    includeFontPadding: false,
+  },
   scrollContainer: {
     flexGrow: 1,
     padding: 20,
@@ -758,6 +1030,36 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: "center",
     color: "#1DA1F2",
+  },
+  postTypeContainer: {
+    flexDirection: "row",
+    marginBottom: 15,
+    backgroundColor: "#f8f9fa",
+    borderRadius: 12,
+    padding: 4,
+  },
+  postTypeOption: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 8,
+  },
+  postTypeOptionActive: {
+    backgroundColor: "white",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  postTypeOptionText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#666",
+  },
+  postTypeOptionTextActive: {
+    color: "#1DA1F2",
+    fontWeight: "600",
   },
   privacyContainer: {
     marginBottom: 15,
@@ -818,20 +1120,34 @@ const styles = StyleSheet.create({
   },
   videoPreview: {
     width: "100%",
-    height: 150,
+    height: 200,
     backgroundColor: "#f0f0f0",
     borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
+    padding: 16,
   },
   videoPreviewText: {
     fontSize: 16,
     color: "#666",
+    fontWeight: "500",
+  },
+  videoInfo: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 4,
   },
   videoNote: {
     fontSize: 12,
     color: "#999",
     marginTop: 4,
+    textAlign: "center",
+  },
+  thumbnailImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    marginTop: 8,
   },
   removeMediaButton: {
     position: "absolute",
@@ -895,6 +1211,9 @@ const styles = StyleSheet.create({
   postButton: {
     backgroundColor: "#1DA1F2",
   },
+  reelButton: {
+    backgroundColor: "#E1306C", // Instagram-like pink for reels
+  },
   disabledButton: {
     backgroundColor: "#a0d2f7",
   },
@@ -926,9 +1245,15 @@ const styles = StyleSheet.create({
   featureIcon: {
     alignItems: "center",
   },
+  featureIconDisabled: {
+    opacity: 0.5,
+  },
   featureIconText: {
     fontSize: 24,
     marginBottom: 5,
+  },
+  featureIconTextDisabled: {
+    opacity: 0.5,
   },
   featureIconLabel: {
     fontSize: 12,

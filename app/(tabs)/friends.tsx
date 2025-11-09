@@ -1,4 +1,8 @@
 import { useThemeStyles } from '@/hooks/useThemeStyles';
+import {
+  Carattere_400Regular,
+  useFonts,
+} from '@expo-google-fonts/carattere';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -47,6 +51,9 @@ type Friend = {
 export default function FriendsScreen() {
   const [activeTab, setActiveTab] = useState<'friends' | 'requests'>('friends');
   const [searchQuery, setSearchQuery] = useState('');
+  const [fontsLoaded] = useFonts({
+    Carattere: Carattere_400Regular,
+  });
   const [refreshing, setRefreshing] = useState(false);
   const [showAddFriendModal, setShowAddFriendModal] = useState(false);
   const [newFriendUsername, setNewFriendUsername] = useState('');
@@ -61,7 +68,7 @@ export default function FriendsScreen() {
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
 
-  const styles = createStyles(colors);
+  const styles = createStyles(colors, fontsLoaded || false);
 
   // Load initial data
   useEffect(() => {
@@ -185,7 +192,6 @@ export default function FriendsScreen() {
         Alert.alert('Success', 'Friend request accepted');
         setFriendRequests(prev => prev.filter(req => req._id !== requestId));
         loadFriends(); 
-        // Reload friends list
       } else {
         Alert.alert('Error', data.message || 'Failed to accept friend request');
       }
@@ -263,11 +269,12 @@ export default function FriendsScreen() {
         ...authHeaders,
         'Content-Type': 'application/json',
       };
-      console.log("recipent id",)
-      const response = await fetch(`http://localhost:3000/conversations`, {
+      console.log("recipient id", recipientId);
+      
+      const response = await fetch(`${API_BASE_URL}/conversations`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ participantId: recipientId }),
+        body: JSON.stringify({ recipientId }),
       });
 
       if (response.ok) {
@@ -275,6 +282,9 @@ export default function FriendsScreen() {
         if (data.success) {
           router.push(`/chat/${data.conversation._id}?participantId=${recipientId}`);
         }
+      } else {
+        const errorData = await response.json();
+        Alert.alert('Error', errorData.message || 'Failed to start conversation');
       }
     } catch (error) {
       console.error('Error starting conversation:', error);
@@ -323,7 +333,7 @@ export default function FriendsScreen() {
           <TouchableOpacity 
             style={styles.acceptButton}
             onPress={(e) => {
-              e.stopPropagation(); // Prevent navigation when clicking button
+              e.stopPropagation();
               handleAcceptRequest(request._id);
             }}
           >
@@ -332,7 +342,7 @@ export default function FriendsScreen() {
           <TouchableOpacity 
             style={styles.declineButton}
             onPress={(e) => {
-              e.stopPropagation(); // Prevent navigation when clicking button
+              e.stopPropagation();
               handleDeclineRequest(request._id);
             }}
           >
@@ -370,8 +380,8 @@ export default function FriendsScreen() {
         <TouchableOpacity 
           style={styles.messageButton}
           onPress={(e) => {
-            e.stopPropagation(); // Prevent navigation when clicking button
-            startConversation(friend.user._id); // Pass the user ID, not the friend relationship ID
+            e.stopPropagation();
+            startConversation(friend.user._id);
           }}
         >
           <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
@@ -379,7 +389,7 @@ export default function FriendsScreen() {
         <TouchableOpacity 
           style={styles.moreButton}
           onPress={(e) => {
-            e.stopPropagation(); // Prevent navigation when clicking button
+            e.stopPropagation();
             handleRemoveFriend(friend.user._id);
           }}
         >
@@ -410,7 +420,7 @@ export default function FriendsScreen() {
       <TouchableOpacity 
         style={styles.addFriendButton}
         onPress={(e) => {
-          e.stopPropagation(); // Prevent navigation when clicking button
+          e.stopPropagation();
           sendFriendRequest(user._id);
         }}
       >
@@ -473,6 +483,22 @@ export default function FriendsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header - Similar to HomeScreen */}
+      <View style={styles.appHeader}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.appTitle}>SmartConnect</Text>
+        </View>
+        
+        <View style={styles.headerRight}>
+          <TouchableOpacity 
+            style={styles.addButton}
+            onPress={() => setShowAddFriendModal(true)}
+          >
+            <Ionicons name="person-add-outline" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       <ScrollView 
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
@@ -484,17 +510,6 @@ export default function FriendsScreen() {
           />
         }
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Friends</Text>
-          <TouchableOpacity 
-            style={styles.addButton}
-            onPress={() => setShowAddFriendModal(true)}
-          >
-            <Ionicons name="person-add-outline" size={24} color="#fff" />
-          </TouchableOpacity>
-        </View>
-
         {/* Search Bar */}
         <View style={styles.searchContainer}>
           <Ionicons name="search-outline" size={20} color={colors.textSecondary} style={styles.searchIcon} />
@@ -610,7 +625,7 @@ export default function FriendsScreen() {
   );
 }
 
-const createStyles = (colors: any) => StyleSheet.create({
+const createStyles = (colors: any, fontsLoaded: boolean) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -618,27 +633,49 @@ const createStyles = (colors: any) => StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  header: {
+  // New Header Styles (Similar to HomeScreen)
+  appHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
+    shadowColor: colors.text,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 60,
-    paddingHorizontal: 16,
-    paddingBottom: 8,
   },
-  headerTitle: {
-    color: colors.text,
+  appTitle: {
     fontSize: 32,
-    fontWeight: 'bold',
+    fontFamily: fontsLoaded ? 'Carattere' : 'System',
+    color: colors.primary,
+    marginLeft: 8,
+    includeFontPadding: false,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: 8,
+    backgroundColor: colors.background,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
+  // Rest of the styles remain the same
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,3 +1,7 @@
+import {
+  Carattere_400Regular,
+  useFonts,
+} from '@expo-google-fonts/carattere';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
@@ -24,6 +28,11 @@ export default function MenuScreen() {
   const { theme, toggleTheme, setTheme } = useTheme();
   const { colors, isDark } = useThemeStyles();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
+
+  // Load Carattere font
+  let [fontsLoaded] = useFonts({
+    Carattere_400Regular,
+  });
 
   const handleLogout = async () => {
     console.log('🔄 handleLogout function called');
@@ -193,10 +202,22 @@ export default function MenuScreen() {
     </TouchableOpacity>
   );
 
+  // Show loading while fonts are loading
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* App Header */}
       <View style={styles.appHeader}>
-        <Text style={styles.appTitle}>SmartConnect</Text>
+        <Text style={styles.headerTitle}>SmartConnect</Text>
       </View>
       
       <ScrollView 
@@ -239,11 +260,8 @@ export default function MenuScreen() {
                 </Text>
               )}
               
-    
             </View>
           </View>
-
-         
         </Pressable>
 
         {/* Menu Sections */}
@@ -287,20 +305,43 @@ const createStyles = (colors: any) => StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  // App Header Styles
+  appHeader: {
+    paddingTop:15,
+    paddingBottom: 15,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+    
+  },
+  headerTitle: {
+    fontSize: 32,
+    color:colors.primary,
+    fontFamily: "Carattere_400Regular",
+    includeFontPadding: false,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
+  loadingText: {
+    color: colors.text,
+    fontSize: 16,
+  },
   scrollView: {
     flex: 1,
-  },
-  appHeader: {
-    paddingVertical: 15,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  appTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.accent,
   },
   profileSection: {
     backgroundColor: colors.surface,

@@ -5,9 +5,12 @@ export interface User {
   username: string;
   fullName: string;
   profilePicture?: string;
-  isProfileComplete?:false;
+  isProfileComplete?: boolean; // Changed from false to boolean
   coverPhoto?: string;
   bio?: string;
+  website?: string; // Add this
+  location?: string; // Add this
+  interests?: string[]; // Add this
   createdAt: string;
   postsCount?: number;
   friendsCount?: number;
@@ -33,4 +36,15 @@ export interface AuthState {
   isLoading: boolean;
 }
 
+// Optional: Add these types for better organization
+export interface ProfileUpdateData {
+  bio?: string;
+  website?: string;
+  location?: string;
+  profilePicture?: string;
+  coverPhoto?: string;
+}
 
+export interface CompleteProfileData extends ProfileUpdateData {
+  interests?: string[];
+}

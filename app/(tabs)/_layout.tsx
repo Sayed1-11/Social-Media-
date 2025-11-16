@@ -383,6 +383,18 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
+          name="edit-profile"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="interests"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
           name="messages"
           options={{
             href: null,

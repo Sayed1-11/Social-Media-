@@ -3,14 +3,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { AuthState, LoginCredentials, SignupCredentials, User } from '../types/auth';
 
-interface AuthContextType extends AuthState {
+export interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
   signup: (credentials: SignupCredentials) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (userData: Partial<User>) => Promise<void>;
-  getAuthHeaders: () => Promise<HeadersInit>; // Add this line
-  searchUsers: (query: string) => Promise<User[]>; // Add this
-  getSuggestedUsers: () => Promise<User[]>; // Add this
+  getAuthHeaders: () => Promise<Record<string, string>>;
+  searchUsers: (query: string) => Promise<User[]>;
+  getSuggestedUsers: () => Promise<User[]>;
+  completeInterests: (interests: string[]) => Promise<void>;
+  completeProfile: (profileData: {
+    bio?: string;
+    website?: string;
+    location?: string;
+    profilePicture?: string;
+  }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,8 +26,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const AUTH_TOKEN_KEY = 'authToken';
 const USER_DATA_KEY = 'userData';
 
-// API Base URL
-const API_BASE_URL = 'http://localhost:3000';
+// API Base URL - use your actual backend URL
+const API_BASE_URL = 'http://localhost:3000'; // or your actual backend URL
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>({
@@ -34,7 +41,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkExistingAuth();
   }, []);
 
-  const checkExistingAuth = async () => {
+  const clearStorage = async (): Promise<void> => {
+    try {
+      await Promise.all([
+        AsyncStorage.removeItem(AUTH_TOKEN_KEY),
+        AsyncStorage.removeItem(USER_DATA_KEY),
+      ]);
+    } catch (error) {
+      console.error('Error clearing storage:', error);
+    }
+  };
+
+  const checkExistingAuth = async (): Promise<void> => {
     try {
       console.log('🔍 Checking existing auth...');
       const [token, userData] = await Promise.all([
@@ -61,130 +79,145 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (response.ok) {
             const profileData = await response.json();
             setAuthState({
-              user: profileData.user,
+              user: profileData.user || user,
               isAuthenticated: true,
               isLoading: false,
             });
           } else {
             // Token invalid, clear storage
+            console.log('❌ Token validation failed, clearing storage');
             await clearStorage();
-            setAuthState(prev => ({ ...prev, isLoading: false }));
+            setAuthState({
+              user: null,
+              isAuthenticated: false,
+              isLoading: false,
+            });
           }
         } catch (error) {
           console.error('❌ Token validation failed:', error);
           await clearStorage();
-          setAuthState(prev => ({ ...prev, isLoading: false }));
+          setAuthState({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+          });
         }
       } else {
         console.log('❌ No user found in storage');
-        setAuthState(prev => ({ ...prev, isLoading: false }));
+        setAuthState({
+          user: null,
+          isAuthenticated: false,
+          isLoading: false,
+        });
       }
     } catch (error) {
       console.error('❌ Error checking auth:', error);
-      setAuthState(prev => ({ ...prev, isLoading: false }));
+      setAuthState({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+      });
     }
   };
 
-  const clearStorage = async () => {
-    await Promise.all([
-      AsyncStorage.removeItem(AUTH_TOKEN_KEY),
-      AsyncStorage.removeItem(USER_DATA_KEY),
-    ]);
+  const getAuthHeaders = async (): Promise<Record<string, string>> => {
+    try {
+      const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+      
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      return {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      };
+    } catch (error) {
+      console.error('Error getting auth headers:', error);
+      throw new Error('Authentication failed - Please login again');
+    }
   };
 
-  // Add this function inside AuthProvider
-// In AuthContext.tsx
-const getAuthHeaders = async (): Promise<Record<string, string>> => {
-  try {
-    // Get token from your storage (adjust based on your storage method)
-    const token = await AsyncStorage.getItem('authToken'); // or your token storage
-    
-    console.log("Retrieved token:", token ? `${token.substring(0, 20)}...` : "No token found");
-    
-    if (!token) {
-      throw new Error('No authentication token found');
+  const searchUsers = async (query: string): Promise<User[]> => {
+    try {
+      if (!query.trim()) {
+        return [];
+      }
+
+      const headers = await getAuthHeaders();
+      
+      const response = await fetch(`${API_BASE_URL}/users/search?q=${encodeURIComponent(query)}`, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        return data.users.map((user: any) => ({
+          id: user._id || user.id,
+          email: user.email,
+          username: user.username || `user_${user._id || user.id}`,
+          fullName: user.name || user.fullName || '',
+          profilePicture: user.profilePicture,
+          bio: user.bio,
+          createdAt: user.createdAt,
+        }));
+      } else {
+        throw new Error(data.message || 'Failed to search users');
+      }
+    } catch (error) {
+      console.error('Error searching users:', error);
+      throw error;
     }
-    
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    };
-  } catch (error) {
-    console.error('Error getting auth headers:', error);
-    throw new Error('Authentication failed - Please login again');
-  }
-};
+  };
 
-// Add these functions inside AuthProvider
-const searchUsers = async (query: string): Promise<User[]> => {
-  try {
-    if (!query.trim()) {
-      return [];
+  const getSuggestedUsers = async (): Promise<User[]> => {
+    try {
+      const headers = await getAuthHeaders();
+      
+      const response = await fetch(`${API_BASE_URL}/users/suggested`, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        return data.users.map((user: any) => ({
+          id: user._id || user.id,
+          email: user.email,
+          username: user.username || `user_${user._id || user.id}`,
+          fullName: user.name || user.fullName || '',
+          profilePicture: user.profilePicture,
+          bio: user.bio,
+          createdAt: user.createdAt,
+        }));
+      } else {
+        throw new Error(data.message || 'Failed to get suggested users');
+      }
+    } catch (error) {
+      console.error('Error getting suggested users:', error);
+      throw error;
     }
+  };
 
-    const headers = await getAuthHeaders();
-    
-    const response = await fetch(`${API_BASE_URL}/users/search?q=${encodeURIComponent(query)}`, {
-      method: 'GET',
-      headers: headers as HeadersInit,
-    });
-
-    const data = await response.json();
-
-    if (response.ok && data.success) {
-      return data.users.map((user: any) => ({
-        id: user._id || user.id,
-        email: user.email,
-        username: user.username || `@${user.name?.toLowerCase().replace(/\s+/g, '_')}`,
-        fullName: user.name || user.fullName,
-        profilePicture: user.profilePicture,
-        bio: user.bio,
-        createdAt: user.createdAt,
-      }));
-    } else {
-      throw new Error(data.message || 'Failed to search users');
-    }
-  } catch (error) {
-    console.error('Error searching users:', error);
-    throw error;
-  }
-};
-
-const getSuggestedUsers = async (): Promise<User[]> => {
-  try {
-    const headers = await getAuthHeaders();
-    
-    const response = await fetch(`${API_BASE_URL}/users/suggested`, {
-      method: 'GET',
-      headers: headers as HeadersInit,
-    });
-
-    const data = await response.json();
-
-    if (response.ok && data.success) {
-      return data.users.map((user: any) => ({
-        id: user._id || user.id,
-        email: user.email,
-        username: user.username || `@${user.name?.toLowerCase().replace(/\s+/g, '_')}`,
-        fullName: user.name || user.fullName,
-        profilePicture: user.profilePicture,
-        bio: user.bio,
-        createdAt: user.createdAt,
-      }));
-    } else {
-      throw new Error(data.message || 'Failed to get suggested users');
-    }
-  } catch (error) {
-    console.error('Error getting suggested users:', error);
-    throw error;
-  }
-};
-
- const signup = async (credentials: SignupCredentials) => {
+  const signup = async (credentials: SignupCredentials): Promise<void> => {
     try {
       setAuthState(prev => ({ ...prev, isLoading: true }));
 
-      console.log('📤 Sending signup request...', credentials);
+      console.log('📤 Sending signup request...', { 
+        ...credentials, 
+        password: '[HIDDEN]' 
+      });
 
       const response = await fetch(`${API_BASE_URL}/signup`, {
         method: 'POST',
@@ -201,70 +234,16 @@ const getSuggestedUsers = async (): Promise<User[]> => {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Signup failed');
+        throw new Error(data.message || `Signup failed: ${response.status}`);
       }
 
-      console.log('✅ Signup successful:', data);
+      console.log('✅ Signup successful');
 
       const user: User = {
-        id: data.user.id,
+        id: data.user.id || data.user._id,
         email: data.user.email,
-        username: data.user.name.toLowerCase().replace(/\s+/g, '_'),
-        fullName: data.user.name,
-        createdAt: data.user.createdAt,
-      };
-
-      // Store in AsyncStorage
-      await Promise.all([
-        AsyncStorage.setItem(AUTH_TOKEN_KEY, data.token),
-        AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(user)),
-      ]);
-
-      setAuthState({
-        user,
-        isAuthenticated: true,
-        isLoading: false,
-      });
-
-      console.log('✅ User registered and logged in');
-
-    } catch (error) {
-      console.error('❌ Signup error:', error);
-      setAuthState(prev => ({ ...prev, isLoading: false }));
-      throw error;
-    }
-  };
-
-  const login = async (credentials: LoginCredentials) => {
-    try {
-      setAuthState(prev => ({ ...prev, isLoading: true }));
-
-      console.log('📤 Sending login request...', credentials);
-
-      const response = await fetch(`${API_BASE_URL}/signin`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: credentials.email,
-          password: credentials.password,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Login failed');
-      }
-
-      console.log('✅ Login successful:', data);
-
-      const user: User = {
-        id: data.user.id,
-        email: data.user.email,
-        username: data.user.name.toLowerCase().replace(/\s+/g, '_'),
-        fullName: data.user.name,
+        username: data.user.username || data.user.name.toLowerCase().replace(/\s+/g, '_'),
+        fullName: data.user.name || credentials.fullName,
         profilePicture: data.user.profilePicture,
         bio: data.user.bio,
         createdAt: data.user.createdAt,
@@ -282,7 +261,62 @@ const getSuggestedUsers = async (): Promise<User[]> => {
         isLoading: false,
       });
 
-      console.log('✅ User logged in and data stored');
+    } catch (error) {
+      console.error('❌ Signup error:', error);
+      setAuthState(prev => ({ ...prev, isLoading: false }));
+      throw error;
+    }
+  };
+
+  const login = async (credentials: LoginCredentials): Promise<void> => {
+    try {
+      setAuthState(prev => ({ ...prev, isLoading: true }));
+
+      console.log('📤 Sending login request...', { 
+        ...credentials, 
+        password: '[HIDDEN]' 
+      });
+
+      const response = await fetch(`${API_BASE_URL}/signin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: credentials.email,
+          password: credentials.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || `Login failed: ${response.status}`);
+      }
+
+      console.log('✅ Login successful');
+
+      const user: User = {
+        id: data.user.id || data.user._id,
+        email: data.user.email,
+        username: data.user.username || data.user.name.toLowerCase().replace(/\s+/g, '_'),
+        fullName: data.user.name || data.user.fullName,
+        profilePicture: data.user.profilePicture,
+        bio: data.user.bio,
+        createdAt: data.user.createdAt,
+      };
+
+      // Store in AsyncStorage
+      await Promise.all([
+        AsyncStorage.setItem(AUTH_TOKEN_KEY, data.token),
+        AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(user)),
+      ]);
+
+      setAuthState({
+        user,
+        isAuthenticated: true,
+        isLoading: false,
+      });
 
     } catch (error) {
       console.error('❌ Login error:', error);
@@ -291,7 +325,7 @@ const getSuggestedUsers = async (): Promise<User[]> => {
     }
   };
 
-  const logout = async () => {
+  const logout = async (): Promise<void> => {
     try {
       console.log('🚪 Starting logout process...');
       
@@ -315,8 +349,6 @@ const getSuggestedUsers = async (): Promise<User[]> => {
       // Clear storage
       await clearStorage();
       
-      console.log('✅ Storage cleared, updating auth state...');
-      
       // Update state
       setAuthState({
         user: null,
@@ -324,54 +356,150 @@ const getSuggestedUsers = async (): Promise<User[]> => {
         isLoading: false,
       });
       
-      console.log('✅ Auth state updated to logged out');
+      console.log('✅ Logout successful');
     } catch (error) {
       console.error('❌ Logout error:', error);
       throw error;
     }
   };
 
-  const updateUser = async (userData: Partial<User>) => {
-    if (authState.user) {
-      const updatedUser = { ...authState.user, ...userData };
-      setAuthState(prev => ({ ...prev, user: updatedUser }));
-      await AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(updatedUser));
+  const updateUser = async (userData: Partial<User>): Promise<void> => {
+    try {
+      if (authState.user) {
+        const updatedUser = { ...authState.user, ...userData };
+        setAuthState(prev => ({ ...prev, user: updatedUser }));
+        await AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(updatedUser));
+      }
+    } catch (error) {
+      console.error('Error updating user:', error);
+      throw error;
     }
   };
 
-  console.log('🔄 AuthProvider render - isAuthenticated:', authState.isAuthenticated, 'isLoading:', authState.isLoading);
+  // ✅ Correct - in AuthContext.tsx
+const completeInterests = async (interests: string[]): Promise<void> => {
+  try {
+    setAuthState(prev => ({ ...prev, isLoading: true }));
+    
+    const headers = await getAuthHeaders();
+    
+    const response = await fetch(`${API_BASE_URL}/user/interests`, {
+      method: 'POST', // ✅ Matches your backend endpoint
+      headers,
+      body: JSON.stringify({ interests }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to save interests');
+    }
+
+    // ✅ Update user state with new interests
+    if (authState.user && data.user) {
+      const updatedUser = {
+        ...authState.user,
+        interests: data.user.interests,
+        hasCompletedInterests: data.user.hasCompletedInterests,
+      };
+      
+      setAuthState(prev => ({ 
+        ...prev, 
+        user: updatedUser,
+        isLoading: false 
+      }));
+      
+      // ✅ Update AsyncStorage
+      await AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(updatedUser));
+    } else {
+      setAuthState(prev => ({ ...prev, isLoading: false }));
+    }
+
+  } catch (error) {
+    console.error('Error saving interests:', error);
+    setAuthState(prev => ({ ...prev, isLoading: false }));
+    throw error;
+  }
+};
+
+  const completeProfile = async (profileData: {
+    bio?: string;
+    website?: string;
+    location?: string;
+    profilePicture?: string;
+  }): Promise<void> => {
+    try {
+      setAuthState(prev => ({ ...prev, isLoading: true }));
+      
+      const headers = await getAuthHeaders();
+      
+      const response = await fetch(`${API_BASE_URL}/users/profile`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(profileData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to update profile');
+      }
+
+      // Update user in state and storage
+      if (authState.user) {
+        const updatedUser = {
+          ...authState.user,
+          ...profileData,
+        };
+        
+        setAuthState(prev => ({ 
+          ...prev, 
+          user: updatedUser,
+          isLoading: false 
+        }));
+        
+      } else {
+        setAuthState(prev => ({ ...prev, isLoading: false }));
+      }
+    } catch (error) {
+      setAuthState(prev => ({ ...prev, isLoading: false }));
+      throw error;
+    }
+  };
+
+  const contextValue: AuthContextType = {
+    ...authState,
+    login,
+    signup,
+    logout,
+    updateUser,
+    getAuthHeaders,
+    searchUsers,
+    getSuggestedUsers,
+    completeInterests,
+    completeProfile,
+  };
 
   return (
-    <AuthContext.Provider value={{
-      ...authState,
-      login,
-      signup,
-      logout,
-      updateUser,
-      getAuthHeaders, 
-        searchUsers, // Add this
-    getSuggestedUsers, 
-    }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };
-
-// Optional: Also keep the standalone export if you want both options
-// export const authAPI = {
-//   getAuthHeaders: async (): Promise<HeadersInit> => {
-//     const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
-//     return {
-//       'Authorization': `Bearer ${token}`,
-//       'Content-Type': 'application/json',
-//     };
-//   },
-// };

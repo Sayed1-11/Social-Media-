@@ -1,6 +1,6 @@
 // app/signup.tsx
 import { Ionicons } from '@expo/vector-icons';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,16 +19,16 @@ import { useAuth } from '../context/AuthContext';
 export default function SignupScreen() {
   const [formData, setFormData] = useState({
     fullName: '',
-    username: '', // Add username field
+    username: '',
     email: '',
     password: '',
     confirmPassword: '',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   
-  const { signup } = useAuth();
+  const { signup, isLoading } = useAuth();
+  const router = useRouter();
 
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -75,20 +75,18 @@ export default function SignupScreen() {
       return;
     }
 
-    setIsLoading(true);
-
     try {
       await signup({
         fullName: formData.fullName,
-        username: formData.username, 
+        username: formData.username,
         email: formData.email,
         password: formData.password,
       });
-      // Navigation handled by AuthContext
+      
+      // After successful signup, navigate to interests screen
+      router.push('/interests');
     } catch (error) {
       Alert.alert('Signup Failed', error instanceof Error ? error.message : 'Something went wrong');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -327,13 +325,13 @@ export default function SignupScreen() {
           <View style={styles.infoItem}>
             <Ionicons name="arrow-forward" size={16} color="#1DA1F2" />
             <Text style={styles.infoText}>
-              Redirect to profile setup (add photo & bio)
+              Choose your interests
             </Text>
           </View>
           <View style={styles.infoItem}>
             <Ionicons name="arrow-forward" size={16} color="#1DA1F2" />
             <Text style={styles.infoText}>
-              Start connecting with friends!
+              Complete your profile
             </Text>
           </View>
         </View>

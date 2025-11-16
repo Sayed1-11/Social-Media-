@@ -80,6 +80,7 @@ const getLocationIcon = (type: string): string => {
 // Post type enum
 type PostType = 'post' | 'reel';
 
+
 export default function CreatePostScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -191,13 +192,12 @@ export default function CreatePostScreen() {
   // Generate thumbnail from video (simplified version)
   const generateVideoThumbnail = async (videoUri: string): Promise<string> => {
     try {
-      // For React Native, we can create a simple thumbnail by taking the first frame
-      // In a real app, you might use a library like react-native-video-thumbnail
+      // For React Native, you can use a library like react-native-video-thumbnail
+      // For now, we'll create a simple placeholder
       console.log("Generating video thumbnail...");
       
-      // For now, we'll create a placeholder or use the first frame if possible
-      // This is a simplified version - you might want to use a proper thumbnail generator
-      return await convertImageToBase64(videoUri); // This will create a base64 of the video file itself
+      // Create a simple colored placeholder
+      return ''; // Return empty for now, you can implement proper thumbnail generation
     } catch (error) {
       console.error('Error generating thumbnail:', error);
       return '';
@@ -208,7 +208,7 @@ export default function CreatePostScreen() {
   const getVideoInfo = async (videoUri: string): Promise<{ duration: number; thumbnail: string }> => {
     return new Promise((resolve) => {
       // In React Native, you might use a different approach to get video duration
-      // For now, we'll use a simplified version
+      // For now, we'll use a simplified version that estimates duration
       const video = document.createElement('video');
       video.src = videoUri;
       video.onloadedmetadata = async () => {
@@ -217,7 +217,8 @@ export default function CreatePostScreen() {
         resolve({ duration, thumbnail });
       };
       video.onerror = () => {
-        resolve({ duration: 0, thumbnail: '' });
+        // Fallback duration estimation
+        resolve({ duration: 15, thumbnail: '' }); // Default 15 seconds
       };
     });
   };
@@ -261,10 +262,10 @@ export default function CreatePostScreen() {
     }
   };
 
-  // Upload video to MongoDB
-  const uploadVideoToMongoDB = async (videoUri: string): Promise<{ videoId: string; duration: number }> => {
+  // UPLOAD VIDEO TO STREAMABLE
+  const uploadVideoToStreamable = async (videoUri: string): Promise<{ videoId: string; shortcode: string; duration: number }> => {
     try {
-      console.log("Starting video upload to MongoDB...");
+      console.log("Starting video upload to Streamable...");
       
       const base64Video = await convertVideoToBase64(videoUri);
       const videoInfo = await getVideoInfo(videoUri);
@@ -282,9 +283,8 @@ export default function CreatePostScreen() {
         },
         body: JSON.stringify({
           video: base64Video,
-          thumbnail: videoInfo.thumbnail,
-          duration: videoInfo.duration,
-          aspectRatio: '9:16'
+          title: postContent || `Reel by ${user?.username}`,
+          description: postContent || '',
         }),
       });
 
@@ -299,13 +299,58 @@ export default function CreatePostScreen() {
         throw new Error(uploadData.message || 'Failed to upload video');
       }
 
-      console.log("Video uploaded successfully to MongoDB:", uploadData.video.id);
+      console.log("Video uploaded successfully to Streamable:", uploadData.video);
       return {
         videoId: uploadData.video.id,
+        shortcode: uploadData.video.shortcode,
         duration: videoInfo.duration
       };
     } catch (error) {
-      console.error('Error uploading video to MongoDB:', error);
+      console.error('Error uploading video to Streamable:', error);
+      throw new Error('Failed to upload video. Please try again.');
+    }
+  };
+
+  // ALTERNATIVE: Upload video via URL (if video is already hosted)
+  const uploadVideoViaURL = async (videoUri: string): Promise<{ videoId: string; shortcode: string; duration: number }> => {
+    try {
+      console.log("Starting video upload via URL...");
+      
+      const videoInfo = await getVideoInfo(videoUri);
+      const headers = await getAuthHeaders();
+      
+      const uploadResponse = await fetch(`${API_BASE_URL}/upload/video/url`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          videoUrl: videoUri, // This should be a publicly accessible URL
+          title: postContent || `Reel by ${user?.username}`,
+          description: postContent || '',
+        }),
+      });
+
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json();
+        throw new Error(errorData.message || `Video upload failed with status: ${uploadResponse.status}`);
+      }
+
+      const uploadData = await uploadResponse.json();
+      
+      if (!uploadData.success || !uploadData.video) {
+        throw new Error(uploadData.message || 'Failed to upload video');
+      }
+
+      console.log("Video import started successfully:", uploadData.video);
+      return {
+        videoId: uploadData.video.id,
+        shortcode: uploadData.video.shortcode,
+        duration: videoInfo.duration
+      };
+    } catch (error) {
+      console.error('Error uploading video via URL:', error);
       throw new Error('Failed to upload video. Please try again.');
     }
   };
@@ -367,7 +412,7 @@ export default function CreatePostScreen() {
         setSelectedImage(null);
         setPostType('reel');
         
-        // Get video info including duration and generate thumbnail
+        // Get video info including duration
         if (video.uri) {
           const videoInfo = await getVideoInfo(video.uri);
           setVideoDuration(videoInfo.duration);
@@ -465,14 +510,16 @@ export default function CreatePostScreen() {
     return await response.json();
   };
 
-  // Create reel with MongoDB video
-  const createReel = async (videoId: string, duration: number) => {
+  // Create reel with Streamable video
+  const createReel = async (videoId: string, shortcode: string, duration: number) => {
     const reelData = {
       videoId: videoId,
+      shortcode: shortcode,
       content: postContent,
       duration: duration,
       privacy: privacy,
       location: selectedLocation,
+      type: 'reel'
     };
 
     const headers = await getAuthHeaders();
@@ -525,10 +572,10 @@ export default function CreatePostScreen() {
         result = await createPost(imageUrl);
         
       } else if (selectedVideo) {
-        // Handle video reel with MongoDB storage
-        console.log("Processing video reel with MongoDB storage...");
-        const { videoId, duration } = await uploadVideoToMongoDB(selectedVideo);
-        result = await createReel(videoId, duration);
+        // Handle video reel with Streamable storage
+        console.log("Processing video reel with Streamable...");
+        const { videoId, shortcode, duration } = await uploadVideoToStreamable(selectedVideo);
+        result = await createReel(videoId, shortcode, duration);
         
       } else {
         // Handle text-only post
@@ -552,7 +599,7 @@ export default function CreatePostScreen() {
       setVideoThumbnail(null);
       
       setTimeout(() => {
-        router.replace(postType === 'reel' ? "/reels" : "/");
+        router.replace(postType === 'reel' ? "/" : "/");
       }, 500);
       
     } catch (error) {
@@ -719,13 +766,17 @@ export default function CreatePostScreen() {
                 Duration: {Math.round(videoDuration)}s | Reel
               </Text>
               <Text style={styles.videoNote}>
-                Video will be stored in MongoDB
+                Video will be uploaded to Streamable
               </Text>
-              {videoThumbnail && (
+              {videoThumbnail ? (
                 <Image
                   source={{ uri: videoThumbnail }}
                   style={styles.thumbnailImage}
                 />
+              ) : (
+                <View style={styles.thumbnailPlaceholder}>
+                  <Text style={styles.thumbnailPlaceholderText}>Video Thumbnail</Text>
+                </View>
               )}
             </View>
             <TouchableOpacity
@@ -993,6 +1044,7 @@ export default function CreatePostScreen() {
   );
 }
 
+// ... (styles remain the same as in your original code)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1024,6 +1076,25 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: 20,
   },
+   thumbnailPlaceholder: {
+    width: 80,
+    height: 80,
+    backgroundColor: '#e1e8ed',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#ccd6dd',
+    borderStyle: 'dashed',
+  },
+  thumbnailPlaceholderText: {
+    fontSize: 10,
+    color: '#657786',
+    textAlign: 'center',
+    paddingHorizontal: 4,
+  },
+
   title: {
     fontSize: 24,
     fontWeight: "bold",

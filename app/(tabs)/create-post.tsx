@@ -80,7 +80,6 @@ const getLocationIcon = (type: string): string => {
 // Post type enum
 type PostType = 'post' | 'reel';
 
-
 export default function CreatePostScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -100,13 +99,14 @@ export default function CreatePostScreen() {
   const [postType, setPostType] = useState<PostType>('post');
   const [videoDuration, setVideoDuration] = useState<number>(0);
   const [videoThumbnail, setVideoThumbnail] = useState<string | null>(null);
+  const [videoInfo, setVideoInfo] = useState<{ duration: number; size: number; type: string } | null>(null);
 
   // Load Carattere font
   let [fontsLoaded] = useFonts({
     Carattere_400Regular,
   });
 
-  const API_BASE_URL = 'http://localhost:3000';
+  const API_BASE_URL = 'https://serverside-app.onrender.com';
 
   // Handle incoming image from TabLayout
   useEffect(() => {
@@ -189,37 +189,33 @@ export default function CreatePostScreen() {
     }
   };
 
-  // Generate thumbnail from video (simplified version)
-  const generateVideoThumbnail = async (videoUri: string): Promise<string> => {
-    try {
-      // For React Native, you can use a library like react-native-video-thumbnail
-      // For now, we'll create a simple placeholder
-      console.log("Generating video thumbnail...");
-      
-      // Create a simple colored placeholder
-      return ''; // Return empty for now, you can implement proper thumbnail generation
-    } catch (error) {
-      console.error('Error generating thumbnail:', error);
-      return '';
-    }
-  };
-
-  // Get video duration and generate thumbnail
-  const getVideoInfo = async (videoUri: string): Promise<{ duration: number; thumbnail: string }> => {
+  // Get video info for Android compatibility
+  const getVideoInfo = async (videoUri: string): Promise<{ duration: number; size: number; type: string }> => {
     return new Promise((resolve) => {
-      // In React Native, you might use a different approach to get video duration
-      // For now, we'll use a simplified version that estimates duration
-      const video = document.createElement('video');
-      video.src = videoUri;
-      video.onloadedmetadata = async () => {
-        const duration = video.duration;
-        const thumbnail = await generateVideoThumbnail(videoUri);
-        resolve({ duration, thumbnail });
-      };
-      video.onerror = () => {
-        // Fallback duration estimation
-        resolve({ duration: 15, thumbnail: '' }); // Default 15 seconds
-      };
+      // For React Native, we'll use a simplified approach
+      // In a real app, you might use react-native-video or similar
+      try {
+        // Create a temporary video element to get duration (for web/desktop)
+        if (Platform.OS === 'web') {
+          const video = document.createElement('video');
+          video.src = videoUri;
+          video.onloadedmetadata = () => {
+            resolve({
+              duration: video.duration,
+              size: 0, // Can't easily get file size in browser
+              type: 'video/mp4'
+            });
+          };
+          video.onerror = () => {
+            resolve({ duration: 15, size: 0, type: 'video/mp4' });
+          };
+        } else {
+          resolve({ duration: 15, size: 0, type: 'video/mp4' });
+        }
+      } catch (error) {
+        console.log('Error getting video info, using defaults:', error);
+        resolve({ duration: 15, size: 0, type: 'video/mp4' });
+      }
     });
   };
 
@@ -262,16 +258,19 @@ export default function CreatePostScreen() {
     }
   };
 
-  // UPLOAD VIDEO TO STREAMABLE
-  const uploadVideoToStreamable = async (videoUri: string): Promise<{ videoId: string; shortcode: string; duration: number }> => {
+  // Upload video using base64 (matches your backend expectation)
+  const uploadVideoWithBase64 = async (videoUri: string): Promise<{ videoId: string; shortcode: string; duration: number }> => {
     try {
-      console.log("Starting video upload to Streamable...");
+      console.log("Starting video upload with base64...");
       
-      const base64Video = await convertVideoToBase64(videoUri);
+      // Get video info first
       const videoInfo = await getVideoInfo(videoUri);
-      
       setVideoDuration(videoInfo.duration);
-      setVideoThumbnail(videoInfo.thumbnail);
+      
+      // Convert video to base64
+      console.log("Converting video to base64...");
+      const base64Video = await convertVideoToBase64(videoUri);
+      console.log("Video converted to base64, length:", base64Video.length);
       
       const headers = await getAuthHeaders();
       
@@ -283,14 +282,25 @@ export default function CreatePostScreen() {
         },
         body: JSON.stringify({
           video: base64Video,
-          title: postContent || `Reel by ${user?.username}`,
+          title: postContent || `Reel by ${user?.username || 'user'}`,
           description: postContent || '',
+          privacy: privacy
         }),
       });
 
       if (!uploadResponse.ok) {
-        const errorData = await uploadResponse.json();
-        throw new Error(errorData.message || `Video upload failed with status: ${uploadResponse.status}`);
+        const errorText = await uploadResponse.text();
+        console.error('Upload error response:', errorText);
+        let errorMessage = `Video upload failed with status: ${uploadResponse.status}`;
+        
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          // If response is not JSON, use the text
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const uploadData = await uploadResponse.json();
@@ -299,58 +309,16 @@ export default function CreatePostScreen() {
         throw new Error(uploadData.message || 'Failed to upload video');
       }
 
-      console.log("Video uploaded successfully to Streamable:", uploadData.video);
+      console.log("Video uploaded successfully:", uploadData.video);
+      
+      // Return the data in the format expected by createReel
       return {
-        videoId: uploadData.video.id,
-        shortcode: uploadData.video.shortcode,
+        videoId: uploadData.video._id || uploadData.video.id,
+        shortcode: uploadData.video.streamableShortcode || uploadData.video.shortcode,
         duration: videoInfo.duration
       };
     } catch (error) {
-      console.error('Error uploading video to Streamable:', error);
-      throw new Error('Failed to upload video. Please try again.');
-    }
-  };
-
-  // ALTERNATIVE: Upload video via URL (if video is already hosted)
-  const uploadVideoViaURL = async (videoUri: string): Promise<{ videoId: string; shortcode: string; duration: number }> => {
-    try {
-      console.log("Starting video upload via URL...");
-      
-      const videoInfo = await getVideoInfo(videoUri);
-      const headers = await getAuthHeaders();
-      
-      const uploadResponse = await fetch(`${API_BASE_URL}/upload/video/url`, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          videoUrl: videoUri, // This should be a publicly accessible URL
-          title: postContent || `Reel by ${user?.username}`,
-          description: postContent || '',
-        }),
-      });
-
-      if (!uploadResponse.ok) {
-        const errorData = await uploadResponse.json();
-        throw new Error(errorData.message || `Video upload failed with status: ${uploadResponse.status}`);
-      }
-
-      const uploadData = await uploadResponse.json();
-      
-      if (!uploadData.success || !uploadData.video) {
-        throw new Error(uploadData.message || 'Failed to upload video');
-      }
-
-      console.log("Video import started successfully:", uploadData.video);
-      return {
-        videoId: uploadData.video.id,
-        shortcode: uploadData.video.shortcode,
-        duration: videoInfo.duration
-      };
-    } catch (error) {
-      console.error('Error uploading video via URL:', error);
+      console.error('Error uploading video:', error);
       throw new Error('Failed to upload video. Please try again.');
     }
   };
@@ -375,12 +343,13 @@ export default function CreatePostScreen() {
         quality: 0.8,
       });
 
-      if (!result.canceled) {
+      if (!result.canceled && result.assets && result.assets.length > 0) {
         setSelectedImage(result.assets[0].uri);
         setSelectedVideo(null);
         setPostType('post');
       }
     } catch (error) {
+      console.error('Error picking image:', error);
       Alert.alert("Error", "Failed to pick image");
     }
   };
@@ -388,6 +357,8 @@ export default function CreatePostScreen() {
   // Pick Video
   const pickVideo = async () => {
     try {
+      console.log("Starting video picker...");
+      
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (status !== "granted") {
@@ -404,23 +375,43 @@ export default function CreatePostScreen() {
         aspect: [9, 16], // Vertical aspect ratio for reels
         quality: 0.8,
         videoMaxDuration: 60, // 60 seconds max for reels
+        // Android specific options
+        ...(Platform.OS === 'android' && {
+          videoQuality: ImagePicker.UIImagePickerControllerQualityType.High,
+        }),
       });
 
-      if (!result.canceled) {
+      console.log("Video picker result:", result);
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
         const video = result.assets[0];
+        console.log("Selected video:", video);
+        
         setSelectedVideo(video.uri);
         setSelectedImage(null);
         setPostType('reel');
         
         // Get video info including duration
         if (video.uri) {
-          const videoInfo = await getVideoInfo(video.uri);
-          setVideoDuration(videoInfo.duration);
-          setVideoThumbnail(videoInfo.thumbnail);
+          try {
+            const info = await getVideoInfo(video.uri);
+            setVideoDuration(info.duration);
+            setVideoInfo(info);
+            console.log("Video info:", info);
+          } catch (infoError) {
+            console.error("Error getting video info:", infoError);
+            setVideoDuration(15); // Default duration
+          }
         }
+      } else {
+        console.log("Video selection canceled or no assets");
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to pick video");
+      console.error('Error picking video:', error);
+      Alert.alert(
+        "Error", 
+        "Failed to pick video. Please make sure the video file is supported and try again."
+      );
     }
   };
 
@@ -463,6 +454,7 @@ export default function CreatePostScreen() {
     setSelectedVideo(null);
     setVideoDuration(0);
     setVideoThumbnail(null);
+    setVideoInfo(null);
   };
 
   // Remove Location
@@ -489,6 +481,7 @@ export default function CreatePostScreen() {
       image: imageUrl || '',
       privacy: privacy,
       location: selectedLocation,
+      type: 'post'
     };
 
     const headers = await getAuthHeaders();
@@ -510,13 +503,13 @@ export default function CreatePostScreen() {
     return await response.json();
   };
 
-  // Create reel with Streamable video
+  // Create reel with video - UPDATED to use posts endpoint with type 'reel'
   const createReel = async (videoId: string, shortcode: string, duration: number) => {
     const reelData = {
-      videoId: videoId,
-      shortcode: shortcode,
       content: postContent,
-      duration: duration,
+      videoUrl: `https://streamable.com/${shortcode}`,
+      videoShortcode: shortcode,
+      videoDuration: duration,
       privacy: privacy,
       location: selectedLocation,
       type: 'reel'
@@ -524,7 +517,8 @@ export default function CreatePostScreen() {
 
     const headers = await getAuthHeaders();
     
-    const response = await fetch(`${API_BASE_URL}/reels`, {
+    // Use the posts endpoint but with type 'reel'
+    const response = await fetch(`${API_BASE_URL}/posts`, {
       method: 'POST',
       headers: {
         ...headers,
@@ -572,10 +566,15 @@ export default function CreatePostScreen() {
         result = await createPost(imageUrl);
         
       } else if (selectedVideo) {
-        // Handle video reel with Streamable storage
-        console.log("Processing video reel with Streamable...");
-        const { videoId, shortcode, duration } = await uploadVideoToStreamable(selectedVideo);
-        result = await createReel(videoId, shortcode, duration);
+        // Handle video reel
+        console.log("Processing video reel...");
+        console.log("Selected video URI:", selectedVideo);
+        
+        const videoData = await uploadVideoWithBase64(selectedVideo);
+        console.log("Video upload successful, data:", videoData);
+        
+        result = await createReel(videoData.videoId, videoData.shortcode, videoData.duration);
+        console.log("Reel creation successful:", result);
         
       } else {
         // Handle text-only post
@@ -597,13 +596,21 @@ export default function CreatePostScreen() {
       setSelectedLocation(null);
       setVideoDuration(0);
       setVideoThumbnail(null);
+      setVideoInfo(null);
       
       setTimeout(() => {
-        router.replace(postType === 'reel' ? "/" : "/");
+        router.replace("/");
       }, 500);
       
     } catch (error) {
       console.error('Error creating content:', error);
+      console.error('Error details:', {
+        postType,
+        hasImage: !!selectedImage,
+        hasVideo: !!selectedVideo,
+        contentLength: postContent.length
+      });
+      
       Alert.alert(
         "Error", 
         error instanceof Error ? error.message : "Failed to create post. Please try again."
@@ -660,6 +667,7 @@ export default function CreatePostScreen() {
                 setSelectedVideo(null);
                 setVideoDuration(0);
                 setVideoThumbnail(null);
+                setVideoInfo(null);
               }
             }}
           >
@@ -765,19 +773,18 @@ export default function CreatePostScreen() {
               <Text style={styles.videoInfo}>
                 Duration: {Math.round(videoDuration)}s | Reel
               </Text>
-              <Text style={styles.videoNote}>
-                Video will be uploaded to Streamable
-              </Text>
-              {videoThumbnail ? (
-                <Image
-                  source={{ uri: videoThumbnail }}
-                  style={styles.thumbnailImage}
-                />
-              ) : (
-                <View style={styles.thumbnailPlaceholder}>
-                  <Text style={styles.thumbnailPlaceholderText}>Video Thumbnail</Text>
-                </View>
+              {videoInfo && (
+                <Text style={styles.videoDetails}>
+                  Format: {videoInfo.type}
+                </Text>
               )}
+              <Text style={styles.videoNote}>
+                Video will be uploaded as a reel
+              </Text>
+              <View style={styles.thumbnailPlaceholder}>
+                <Text style={styles.thumbnailPlaceholderText}>Video Preview</Text>
+                <Text style={styles.thumbnailSubText}>Tap play to view</Text>
+              </View>
             </View>
             <TouchableOpacity
               style={styles.removeMediaButton}
@@ -1044,7 +1051,6 @@ export default function CreatePostScreen() {
   );
 }
 
-// ... (styles remain the same as in your original code)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1076,8 +1082,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: 20,
   },
-   thumbnailPlaceholder: {
-    width: 80,
+  thumbnailPlaceholder: {
+    width: 120,
     height: 80,
     backgroundColor: '#e1e8ed',
     borderRadius: 8,
@@ -1089,10 +1095,14 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   thumbnailPlaceholderText: {
+    fontSize: 12,
+    color: '#657786',
+    fontWeight: '500',
+  },
+  thumbnailSubText: {
     fontSize: 10,
     color: '#657786',
-    textAlign: 'center',
-    paddingHorizontal: 4,
+    marginTop: 2,
   },
 
   title: {
@@ -1102,6 +1112,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#1DA1F2",
   },
+
   postTypeContainer: {
     flexDirection: "row",
     marginBottom: 15,
@@ -1208,17 +1219,16 @@ const styles = StyleSheet.create({
     color: "#666",
     marginTop: 4,
   },
+  videoDetails: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 2,
+  },
   videoNote: {
     fontSize: 12,
     color: "#999",
     marginTop: 4,
     textAlign: "center",
-  },
-  thumbnailImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    marginTop: 8,
   },
   removeMediaButton: {
     position: "absolute",

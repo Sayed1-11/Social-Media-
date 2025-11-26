@@ -3,22 +3,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Image,
-    RefreshControl,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 
 const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=face';
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = 'https://serverside-app.onrender.com';
 
 type User = {
   _id: string;
@@ -41,18 +41,18 @@ type Post = {
   privacy: 'public' | 'friends' | 'private';
   likes: Array<{
     userId: string;
-    likedAt: Date;
+    likedAt: string; // Changed from Date to string for API compatibility
   }>;
   comments: Array<{
     _id: string;
     userId: string;
     user?: User;
     content: string;
-    createdAt: Date;
+    createdAt: string; // Changed from Date to string
   }>;
   shares: number;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string; // Changed from Date to string
+  updatedAt: string; // Changed from Date to string
 };
 
 type Friend = {
@@ -413,9 +413,10 @@ export default function UserProfileScreen() {
   const [actionLoading, setActionLoading] = useState(false);
 
   // Helper function to format time
-  const getTimeAgo = (date: Date) => {
+  const getTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
     const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - new Date(date).getTime()) / 1000);
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
     
     if (diffInSeconds < 60) return 'Just now';
     if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
@@ -502,9 +503,7 @@ export default function UserProfileScreen() {
       console.error('Error fetching user posts:', error);
     }
   };
-if (!currentUser) {
-  return; // or show login prompt, or safely skip the action
-}
+
   // Fetch user's friends
   const fetchUserFriends = async () => {
     try {
@@ -525,68 +524,83 @@ if (!currentUser) {
     }
   };
 
-// Send friend request - CORRECTED
-const sendFriendRequest = async () => {
-  try {
-    setActionLoading(true);
-    
-    const headers = await getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/friends/${userId}`, { // POST to /friends/:friendId
-      method: 'POST',
-      headers: {
-        ...headers,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({}) // No body needed for this endpoint
-    });
-
-    const data = await response.json();
-
-    if (response.ok && data.success) {
-      Alert.alert('Success', 'Friend request sent successfully');
-      // Refresh profile to update friend status
-      fetchUserProfile();
-    } else {
-      throw new Error(data.message || 'Failed to send friend request');
+  // Send friend request - CORRECTED
+  const sendFriendRequest = async () => {
+    if (!currentUser) {
+      Alert.alert('Error', 'Please log in to send friend requests');
+      return;
     }
-  } catch (error: any) {
-    console.error('Error sending friend request:', error);
-    Alert.alert('Error', error.message || 'Failed to send friend request');
-  } finally {
-    setActionLoading(false);
-  }
-};
 
-// Remove friend - CORRECTED
-const removeFriend = async () => {
-  try {
-    setActionLoading(true);
-    
-    const headers = await getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/friends/${userId}`, { // DELETE to /friends/:friendId
-      method: 'DELETE',
-      headers: headers
-    });
+    try {
+      setActionLoading(true);
+      
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/friends/${userId}`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({})
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (response.ok && data.success) {
-      Alert.alert('Success', 'Friend removed successfully');
-      // Refresh profile to update friend status
-      fetchUserProfile();
-    } else {
-      throw new Error(data.message || 'Failed to remove friend');
+      if (response.ok && data.success) {
+        Alert.alert('Success', 'Friend request sent successfully');
+        // Refresh profile to update friend status
+        fetchUserProfile();
+      } else {
+        throw new Error(data.message || 'Failed to send friend request');
+      }
+    } catch (error: any) {
+      console.error('Error sending friend request:', error);
+      Alert.alert('Error', error.message || 'Failed to send friend request');
+    } finally {
+      setActionLoading(false);
     }
-  } catch (error: any) {
-    console.error('Error removing friend:', error);
-    Alert.alert('Error', error.message || 'Failed to remove friend');
-  } finally {
-    setActionLoading(false);
-  }
-};
+  };
+
+  // Remove friend - CORRECTED
+  const removeFriend = async () => {
+    if (!currentUser) {
+      Alert.alert('Error', 'Please log in to manage friends');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/friends/${userId}`, {
+        method: 'DELETE',
+        headers: headers
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        Alert.alert('Success', 'Friend removed successfully');
+        // Refresh profile to update friend status
+        fetchUserProfile();
+      } else {
+        throw new Error(data.message || 'Failed to remove friend');
+      }
+    } catch (error: any) {
+      console.error('Error removing friend:', error);
+      Alert.alert('Error', error.message || 'Failed to remove friend');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // Like/Unlike post
   const likePost = async (postId: string) => {
+    if (!currentUser) {
+      Alert.alert('Error', 'Please log in to like posts');
+      return;
+    }
+
     try {
       const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/posts/${postId}/like`, {
@@ -597,23 +611,20 @@ const removeFriend = async () => {
       const data = await response.json();
 
       if (response.ok && data.success) {
-      
-
-setPosts(prevPosts =>
-  prevPosts.map(post => {
-    if (post._id === postId) {
-      const hasLiked = post.likes.some(like => like.userId === currentUser.id);
-      return {
-        ...post,
-        likes: hasLiked
-          ? post.likes.filter(like => like.userId !== currentUser.id)
-          : [...post.likes, { userId: currentUser.id, likedAt: new Date().toISOString() }]
-      } as Post;
-    }
-    return post;
-  })
-);
-
+        setPosts(prevPosts =>
+          prevPosts.map(post => {
+            if (post._id === postId) {
+              const hasLiked = post.likes.some(like => like.userId === currentUser.id);
+              return {
+                ...post,
+                likes: hasLiked
+                  ? post.likes.filter(like => like.userId !== currentUser.id)
+                  : [...post.likes, { userId: currentUser.id, likedAt: new Date().toISOString() }]
+              } as Post;
+            }
+            return post;
+          })
+        );
       } else {
         throw new Error(data.message || "Failed to like post");
       }
@@ -636,7 +647,7 @@ setPosts(prevPosts =>
     if (userId) {
       loadData();
     }
-  }, [userId, fetchUserProfile]);
+  }, [userId]);
 
   // Load friends when tab changes
   useEffect(() => {
@@ -653,7 +664,7 @@ setPosts(prevPosts =>
 
   const renderPost = ({ item }: { item: Post }) => {
     const canView = canViewPost(item);
-    const isLiked = item.likes.some(like => like.userId === currentUser?.id);
+    const isLiked = currentUser ? item.likes.some(like => like.userId === currentUser.id) : false;
 
     if (!canView && item.privacy !== 'public') {
       return (
@@ -696,25 +707,38 @@ setPosts(prevPosts =>
         <Text style={styles.content}>{item.content}</Text>
         
         {item.image && (
-          <Image source={{ uri: item.image }} style={styles.postImage} resizeMode="cover" />
+          <Image 
+            source={{ uri: item.image }} 
+            style={styles.postImage} 
+            resizeMode="cover" 
+            onError={() => console.log('Failed to load post image')}
+          />
         )}
         
         <View style={styles.postActions}>
           <TouchableOpacity 
             onPress={() => likePost(item._id)} 
             style={styles.action}
+            disabled={!currentUser}
           >
+            <Ionicons 
+              name={isLiked ? "heart" : "heart-outline"} 
+              size={20} 
+              color={isLiked ? colors.primary : colors.textSecondary} 
+            />
             <Text style={[styles.actionText, isLiked && styles.likedAction]}>
-              {isLiked ? '❤️' : '🤍'} {item.likes.length}
+              {item.likes.length}
             </Text>
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.action}>
-            <Text style={styles.actionText}>💬 {item.comments.length}</Text>
+            <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
+            <Text style={styles.actionText}>{item.comments.length}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.action}>
-            <Text style={styles.actionText}>📤 {item.shares}</Text>
+            <Ionicons name="share-outline" size={20} color={colors.textSecondary} />
+            <Text style={styles.actionText}>{item.shares}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -729,6 +753,7 @@ setPosts(prevPosts =>
       <Image 
         source={{ uri: item.user.profilePicture || DEFAULT_AVATAR }} 
         style={styles.friendAvatar}
+        onError={() => console.log('Failed to load friend avatar')}
       />
       <View style={styles.friendInfo}>
         <Text style={styles.friendName}>{item.user.name}</Text>
@@ -807,6 +832,7 @@ setPosts(prevPosts =>
                 <Image 
                   source={{ uri: profileUser.profilePicture || DEFAULT_AVATAR }} 
                   style={styles.avatar}
+                  onError={() => console.log('Failed to load profile picture')}
                 />
               </View>
               <View style={styles.userInfo}>
@@ -825,17 +851,17 @@ setPosts(prevPosts =>
             {/* Stats */}
             <View style={styles.statsContainer}>
               <View style={styles.stat}>
-                <Text style={styles.statNumber}>{profileUser.postsCount}</Text>
+                <Text style={styles.statNumber}>{profileUser.postsCount || 0}</Text>
                 <Text style={styles.statLabel}>Posts</Text>
               </View>
               <View style={styles.stat}>
-                <Text style={styles.statNumber}>{profileUser.friendsCount}</Text>
+                <Text style={styles.statNumber}>{profileUser.friendsCount || 0}</Text>
                 <Text style={styles.statLabel}>Friends</Text>
               </View>
             </View>
 
             {/* Action Buttons */}
-            {!isOwnProfile && (
+            {!isOwnProfile && currentUser && (
               <View style={styles.actionButtons}>
                 {profileUser.isFriend ? (
                   <TouchableOpacity 
@@ -903,7 +929,7 @@ setPosts(prevPosts =>
               <View style={styles.emptyState}>
                 <Ionicons name="document-text-outline" size={64} color={colors.textSecondary} />
                 <Text style={styles.emptyStateText}>
-                  {isOwnProfile ? 'You haven' : `${profileUser.name} hasn'`}t posted anything yet
+                  {isOwnProfile ? "You haven't posted anything yet" : `${profileUser.name} hasn't posted anything yet`}
                 </Text>
               </View>
             )
@@ -919,7 +945,7 @@ setPosts(prevPosts =>
               <View style={styles.emptyState}>
                 <Ionicons name="people-outline" size={64} color={colors.textSecondary} />
                 <Text style={styles.emptyStateText}>
-                  {isOwnProfile ? 'You don' : `${profileUser.name} doesn'`}t have any friends yet
+                  {isOwnProfile ? "You don't have any friends yet" : `${profileUser.name} doesn't have any friends yet`}
                 </Text>
               </View>
             )

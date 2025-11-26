@@ -27,7 +27,7 @@ const AUTH_TOKEN_KEY = 'authToken';
 const USER_DATA_KEY = 'userData';
 
 // API Base URL - use your actual backend URL
-const API_BASE_URL = 'http://localhost:3000'; // or your actual backend URL
+const API_BASE_URL = 'https://serverside-app.onrender.com'; // or your actual backend URL
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>({

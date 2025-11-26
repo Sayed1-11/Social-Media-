@@ -58,6 +58,36 @@ interface CallData {
   recipientInfo?: Participant;
 }
 
+// Request timeout utility
+const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 10000) => {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+};
+
+// Retry utility
+const fetchWithRetry = async (fn: () => Promise<any>, retries = 3, delay = 1000): Promise<any> => {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries === 0) throw error;
+    console.log(`Retrying request... ${retries} attempts left`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return fetchWithRetry(fn, retries - 1, delay * 2);
+  }
+};
+
 export default function ChatScreen() {
   const { theme, toggleTheme, setTheme } = useTheme();
   const { colors, isDark } = useThemeStyles();
@@ -139,24 +169,37 @@ export default function ChatScreen() {
         socketRef.current.disconnect();
       }
 
-      // Create new socket connection
-      socketRef.current = io('http://localhost:3000', {
+      // Create new socket connection with improved configuration
+      socketRef.current = io('https://serverside-app.onrender.com', {
         auth: {
           token: token
         },
-        transports: ['websocket', 'polling']
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        timeout: 20000
       });
 
       socketRef.current.on('connect', () => {
-        console.log('WebSocket connected');
+        console.log('✅ WebSocket connected');
       });
 
-      socketRef.current.on('disconnect', () => {
-        console.log('WebSocket disconnected');
+      socketRef.current.on('disconnect', (reason) => {
+        console.log('❌ WebSocket disconnected:', reason);
       });
 
+      socketRef.current.on('connect_error', (error) => {
+        console.error('❌ WebSocket connection error:', error);
+      });
+
+      socketRef.current.on('reconnect', (attempt) => {
+        console.log(`🔄 WebSocket reconnected after ${attempt} attempts`);
+      });
+
+      // Message handlers
       socketRef.current.on('new_message', (data) => {
-        console.log('Received new message via WebSocket:', data);
+        console.log('📨 Received new message via WebSocket:', data);
         
         if (data.conversationId === conversation._id) {
           setMessages(prev => {
@@ -210,51 +253,47 @@ export default function ChatScreen() {
 
       // **CALL HANDLERS**
       socketRef.current.on('incoming_call', (data: CallData) => {
-        console.log('Incoming call:', data);
+        console.log('📞 Incoming call:', data);
         setIncomingCall(data);
         setIsCallModalVisible(true);
         setCallStatus('ringing');
       });
 
       socketRef.current.on('call_initiated', (data) => {
-        console.log('Call initiated successfully:', data);
+        console.log('✅ Call initiated successfully:', data);
         setCallStatus('ringing');
         setActiveCall(prev => prev ? { ...prev, callId: data.callId } : null);
       });
 
       socketRef.current.on('call_accepted', (data) => {
-        console.log('Call accepted by recipient:', data);
+        console.log('✅ Call accepted by recipient:', data);
         setCallStatus('active');
         setIncomingCall(null);
         startCallTimer();
       });
 
       socketRef.current.on('call_rejected', (data) => {
-        console.log('Call rejected:', data);
+        console.log('❌ Call rejected:', data);
         Alert.alert('Call Rejected', data.reason || 'The call was rejected');
         endCall();
       });
 
       socketRef.current.on('call_ended', (data) => {
-        console.log('Call ended:', data);
+        console.log('📞 Call ended:', data);
         Alert.alert('Call Ended', data.reason || 'The call has ended');
         endCall();
       });
 
       socketRef.current.on('call_failed', (data) => {
-        console.log('Call failed:', data);
+        console.log('❌ Call failed:', data);
         Alert.alert('Call Failed', data.message || 'Failed to initiate call');
         endCall();
       });
 
-      socketRef.current.on('connect_error', (error) => {
-        console.error('WebSocket connection error:', error);
-      });
-
     } catch (error) {
-      console.error('Error initializing WebSocket:', error);
+      console.error('❌ Error initializing WebSocket:', error);
     }
-  }, [conversation?._id, user?.id, participantId, getToken, activeCall]);
+  }, [conversation?._id, user?.id, participantId, getToken]);
 
   // Call Management Functions
   const initiateCall = async (callType: 'audio' | 'video') => {
@@ -283,7 +322,7 @@ export default function ChatScreen() {
       });
 
     } catch (error) {
-      console.error('Error initiating call:', error);
+      console.error('❌ Error initiating call:', error);
       Alert.alert('Error', 'Failed to start call.');
       endCall();
     }
@@ -305,7 +344,7 @@ export default function ChatScreen() {
       startCallTimer();
 
     } catch (error) {
-      console.error('Error accepting call:', error);
+      console.error('❌ Error accepting call:', error);
       Alert.alert('Error', 'Failed to accept call.');
       endCall();
     }
@@ -387,6 +426,10 @@ export default function ChatScreen() {
   const handleTypingStop = useCallback(() => {
     if (!socketRef.current || !conversation?._id) return;
 
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
     typingTimeoutRef.current = setTimeout(() => {
       socketRef.current?.emit('typing_stop', {
         conversationId: conversation._id
@@ -404,12 +447,15 @@ export default function ChatScreen() {
       });
 
       const authHeaders = await getAuthHeaders();
-      await fetch(
-        `http://localhost:3000/conversations/${conversation._id}/read`,
-        {
-          method: 'PUT',
-          headers: authHeaders,
-        }
+      await fetchWithRetry(() =>
+        fetchWithTimeout(
+          `https://serverside-app.onrender.com/conversations/${conversation._id}/read`,
+          {
+            method: 'PUT',
+            headers: authHeaders,
+          },
+          8000
+        )
       );
 
       setMessages(prev => prev.map(msg => {
@@ -425,49 +471,58 @@ export default function ChatScreen() {
       }));
 
     } catch (error) {
-      console.error('Error marking messages as read:', error);
+      console.error('❌ Error marking messages as read:', error);
     }
   }, [conversation?._id, user?.id, getAuthHeaders]);
 
   // Get or create conversation with participant
   const getOrCreateConversation = useCallback(async () => {
     try {
-      console.log('Step 1: Getting/Creating conversation with participant:', participantId);
+      console.log('🔍 Step 1: Getting/Creating conversation with participant:', participantId);
       const authHeaders = await getAuthHeaders();
       
-      const response = await fetch(
-        `http://localhost:3000/conversations/participant/${participantId}`,
-        {
-          method: 'GET',
-          headers: authHeaders,
-        }
+      const response = await fetchWithRetry(() =>
+        fetchWithTimeout(
+          `https://serverside-app.onrender.com/conversations/participant/${participantId}`,
+          {
+            method: 'GET',
+            headers: {
+              ...authHeaders,
+              'Content-Type': 'application/json',
+            },
+          },
+          10000
+        )
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Conversation API response:', data);
-        
-        if (data.success && data.conversation) {
-          let participantData = null;
-          
-          if (data.conversation.participant) {
-            participantData = data.conversation.participant;
-          }
-          
-          console.log('Found participant data:', participantData);
-          
-          setConversation(data.conversation);
-          if (participantData) {
-            setParticipant(participantData);
-          }
-          return data.conversation._id;
-        }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}`);
       }
 
-      console.log('No conversation found, creating new one...');
+      const data = await response.json();
+      console.log('✅ Conversation API response:', data);
+      
+      if (data.success && data.conversation) {
+        let participantData = null;
+        
+        if (data.conversation.participant) {
+          participantData = data.conversation.participant;
+        }
+        
+        console.log('✅ Found participant data:', participantData);
+        
+        setConversation(data.conversation);
+        if (participantData) {
+          setParticipant(participantData);
+        }
+        return data.conversation._id;
+      }
+
+      console.log('🔄 No conversation found, creating new one...');
       return await createConversation();
     } catch (error) {
-      console.error('Error getting conversation:', error);
+      console.error('❌ Error getting conversation:', error);
       return await createConversation();
     }
   }, [participantId, getAuthHeaders, user?.id]);
@@ -475,33 +530,42 @@ export default function ChatScreen() {
   // Create new conversation
   const createConversation = useCallback(async () => {
     try {
-      console.log('Creating new conversation with participant:', participantId);
+      console.log('🔄 Creating new conversation with participant:', participantId);
       const authHeaders = await getAuthHeaders();
       
-      const response = await fetch(
-        `http://localhost:3000/conversations`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            participantId: participantId,
-          }),
-        }
+      const response = await fetchWithRetry(() =>
+        fetchWithTimeout(
+          `https://serverside-app.onrender.com/conversations`,
+          {
+            method: 'POST',
+            headers: {
+              ...authHeaders,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              participantId: participantId,
+            }),
+          },
+          10000
+        )
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Conversation created:', data);
-        
-        if (data.success && data.conversation) {
-          setConversation(data.conversation);
-          setParticipant(data.conversation.participant);
-          return data.conversation._id;
-        }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Conversation created:', data);
+      
+      if (data.success && data.conversation) {
+        setConversation(data.conversation);
+        setParticipant(data.conversation.participant);
+        return data.conversation._id;
       }
       throw new Error('Failed to create conversation');
     } catch (error) {
-      console.error('Error creating conversation:', error);
+      console.error('❌ Error creating conversation:', error);
       throw error;
     }
   }, [participantId, getAuthHeaders]);
@@ -509,47 +573,56 @@ export default function ChatScreen() {
   // Load participant details if not available from conversation
   const loadParticipantDetails = useCallback(async () => {
     if (participant) {
-      console.log('Participant already loaded from conversation:', participant);
+      console.log('✅ Participant already loaded from conversation:', participant);
       return participant;
     }
 
     try {
-      console.log('Step 2: Loading participant details:', participantId);
+      console.log('🔍 Step 2: Loading participant details:', participantId);
       const authHeaders = await getAuthHeaders();
       
-      const response = await fetch(
-        `http://localhost:3000/users/${participantId}`,
-        {
-          method: 'GET',
-          headers: authHeaders,
-        }
+      const response = await fetchWithRetry(() =>
+        fetchWithTimeout(
+          `https://serverside-app.onrender.com/users/${participantId}`,
+          {
+            method: 'GET',
+            headers: {
+              ...authHeaders,
+              'Content-Type': 'application/json',
+            },
+          },
+          10000
+        )
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Participant details loaded:', data);
-        
-        let participantData: Participant | null = null;
-        
-        if (data.user) {
-          participantData = data.user;
-        } else if (data.data) {
-          participantData = data.data;
-        } else if (data.name || data.username) {
-          participantData = data;
-        } else if (data.success && data.user) {
-          participantData = data.user;
-        }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
 
-        if (participantData) {
-          setParticipant(participantData);
-          return participantData;
-        }
+      const data = await response.json();
+      console.log('✅ Participant details loaded:', data);
+      
+      let participantData: Participant | null = null;
+      
+      if (data.user) {
+        participantData = data.user;
+      } else if (data.data) {
+        participantData = data.data;
+      } else if (data.name || data.username) {
+        participantData = data;
+      } else if (data.success && data.user) {
+        participantData = data.user;
+      }
+
+      if (participantData) {
+        setParticipant(participantData);
+        return participantData;
       }
       
       throw new Error('Failed to load participant details');
     } catch (error) {
-      console.error('Error loading participant details:', error);
+      console.error('❌ Error loading participant details:', error);
       throw error;
     }
   }, [participantId, participant, getAuthHeaders]);
@@ -560,53 +633,69 @@ export default function ChatScreen() {
 
     try {
       const authHeaders = await getAuthHeaders();
-      const response = await fetch(
-        `http://localhost:3000/users/online-status/${participantId}`,
-        {
-          method: 'GET',
-          headers: authHeaders,
-        }
+      const response = await fetchWithRetry(() =>
+        fetchWithTimeout(
+          `https://serverside-app.onrender.com/users/online-status/${participantId}`,
+          {
+            method: 'GET',
+            headers: {
+              ...authHeaders,
+              'Content-Type': 'application/json',
+            },
+          },
+          8000
+        )
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setParticipant(prev => prev ? {
-            ...prev,
-            isOnline: data.isOnline,
-            lastSeen: data.lastSeen
-          } : null);
-        }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        setParticipant(prev => prev ? {
+          ...prev,
+          isOnline: data.isOnline,
+          lastSeen: data.lastSeen
+        } : null);
       }
     } catch (error) {
-      console.error('Error getting online status:', error);
+      console.error('❌ Error getting online status:', error);
     }
   }, [participantId, getAuthHeaders]);
 
   const fetchMessages = useCallback(async (conversationId: string) => {
     try {
-      console.log('Step 3: Fetching messages for conversation:', conversationId);
+      console.log('🔍 Step 3: Fetching messages for conversation:', conversationId);
       const authHeaders = await getAuthHeaders();
       
-      const response = await fetch(
-        `http://localhost:3000/conversations/${conversationId}/messages`,
-        {
-          method: 'GET',
-          headers: authHeaders,
-        }
+      const response = await fetchWithRetry(() =>
+        fetchWithTimeout(
+          `https://serverside-app.onrender.com/conversations/${conversationId}/messages`,
+          {
+            method: 'GET',
+            headers: {
+              ...authHeaders,
+              'Content-Type': 'application/json',
+            },
+          },
+          10000
+        )
       );
 
       if (!response.ok) {
         if (response.status === 404) {
-          console.log('No messages found, starting fresh conversation');
+          console.log('ℹ️ No messages found, starting fresh conversation');
           setMessages([]);
           return;
         }
-        throw new Error(`Failed to fetch messages: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}`);
       }
 
       const data = await response.json();
-      console.log('Messages loaded:', data);
+      console.log('✅ Messages loaded:', data);
       
       if (data.success) {
         const formattedMessages = (data.messages || []).map((msg: any) => {
@@ -633,12 +722,12 @@ export default function ChatScreen() {
         setMessages([]);
       }
     } catch (error) {
-      console.error('Error fetching messages:', error);
+      console.error('❌ Error fetching messages:', error);
       setMessages([]);
     }
   }, [getAuthHeaders, user?.id]);
 
-  // Send message
+  // Send message with improved error handling
   const sendMessage = async () => {
     if (!newMessage.trim() || !conversation) return;
 
@@ -660,26 +749,32 @@ export default function ChatScreen() {
 
       handleTypingStop();
 
-      const response = await fetch(
-        `http://localhost:3000/messages`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            conversationId: conversation._id,
-            content: newMessage.trim(),
-            type: 'text',
-          }),
-        }
+      const response = await fetchWithRetry(() =>
+        fetchWithTimeout(
+          `https://serverside-app.onrender.com/messages`,
+          {
+            method: 'POST',
+            headers: {
+              ...authHeaders,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              conversationId: conversation._id,
+              content: newMessage.trim(),
+              type: 'text',
+            }),
+          },
+          10000
+        )
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to send message');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}`);
       }
 
       const data = await response.json();
-      console.log('Message sent successfully:', data);
+      console.log('✅ Message sent successfully:', data);
       
       if (data.success) {
         setMessages(prev => 
@@ -696,8 +791,8 @@ export default function ChatScreen() {
         );
       }
     } catch (error) {
-      console.error('Error sending message:', error);
-      Alert.alert('Error', 'Failed to send message');
+      console.error('❌ Error sending message:', error);
+      Alert.alert('Error', `Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setMessages(prev => prev.filter(msg => !msg._id.startsWith('temp-')));
     } finally {
       setSending(false);
@@ -721,7 +816,7 @@ export default function ChatScreen() {
       const initializeChat = async () => {
         setLoading(true);
         try {
-          console.log('=== INITIALIZING CHAT ===');
+          console.log('🚀 === INITIALIZING CHAT ===');
           
           const conversationId = await getOrCreateConversation();
           
@@ -730,18 +825,18 @@ export default function ChatScreen() {
             await getOnlineStatus();
             await fetchMessages(conversationId);
             
-            console.log('=== CHAT INITIALIZED SUCCESSFULLY ===');
+            console.log('✅ === CHAT INITIALIZED SUCCESSFULLY ===');
           } else {
             throw new Error('Failed to initialize conversation');
           }
           
         } catch (error) {
-          console.error('Error initializing chat:', error);
+          console.error('❌ Error initializing chat:', error);
           
           try {
             await loadParticipantDetails();
           } catch (participantError) {
-            console.error('Also failed to load participant:', participantError);
+            console.error('❌ Also failed to load participant:', participantError);
           }
           
           Alert.alert(
@@ -789,7 +884,7 @@ export default function ChatScreen() {
         markMessagesAsRead();
       }
     }
-  }, [messages, conversation?._id, user?.id]);
+  }, [messages, conversation?._id, user?.id, markMessagesAsRead]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -828,14 +923,20 @@ export default function ChatScreen() {
       animationType="slide"
       transparent={false}
       statusBarTranslucent
+      onRequestClose={endCall}
     >
       <View style={styles.callContainer}>
         {/* Call Info */}
         <View style={styles.callInfoContainer}>
           <Image 
-            source={{ uri: activeCall?.callerInfo?.profilePicture || incomingCall?.callerInfo?.profilePicture || participant?.profilePicture }} 
+            source={{ 
+              uri: activeCall?.callerInfo?.profilePicture || 
+              incomingCall?.callerInfo?.profilePicture || 
+              participant?.profilePicture ||
+              'https://via.placeholder.com/120x120/666666/FFFFFF?text=U'
+            }} 
             style={styles.callAvatar}
-            
+            defaultSource={{ uri: 'https://via.placeholder.com/120x120/666666/FFFFFF?text=U' }}
           />
           <Text style={styles.callUserName}>
             {activeCall?.callerInfo?.name || incomingCall?.callerInfo?.name || participant?.name || 'User'}
@@ -951,6 +1052,7 @@ export default function ChatScreen() {
               <Image 
                 source={{ uri: participant.profilePicture }} 
                 style={styles.avatar}
+                defaultSource={{ uri: 'https://via.placeholder.com/32x32/666666/FFFFFF?text=U' }}
                 onError={(e) => console.log('Failed to load avatar:', e.nativeEvent.error)}
               />
             ) : (
@@ -1057,6 +1159,7 @@ export default function ChatScreen() {
               <Image 
                 source={{ uri: participant.profilePicture }} 
                 style={styles.headerAvatar}
+                defaultSource={{ uri: 'https://via.placeholder.com/40x40/666666/FFFFFF?text=U' }}
                 onError={(e) => console.log('Failed to load header avatar:', e.nativeEvent.error)}
               />
             ) : (
@@ -1106,7 +1209,9 @@ export default function ChatScreen() {
           contentContainerStyle={styles.messagesContainer}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
+            if (messages.length > 0) {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }
           }}
           ListEmptyComponent={
             <View style={styles.emptyState}>

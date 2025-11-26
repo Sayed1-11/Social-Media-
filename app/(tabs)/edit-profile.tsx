@@ -53,7 +53,7 @@ export default function EditProfileScreen() {
     }
   }, [user]);
 
-  const API_BASE_URL = "http://localhost:3000";
+  const API_BASE_URL = "https://serverside-app.onrender.com";
 
   // Handle form input changes
   const handleInputChange = (field: string, value: string) => {

@@ -6,6 +6,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -271,15 +272,14 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Sign Up Link */}
           <View style={styles.signupContainer}>
-            <Text style={styles.signupText}>Don't have an account? </Text>
-            <Link href="/(auth)/signup" asChild>
-              <TouchableOpacity disabled={isLoading}>
-                <Text style={styles.signupLink}>Sign up</Text>
-              </TouchableOpacity>
-            </Link>
-          </View>
+  <Text style={styles.signupText}>Don't have an account? </Text>
+  <Link href="/(auth)/signup" asChild>
+    <Pressable disabled={isLoading}>
+      <Text style={styles.signupLink}>Sign up</Text>
+    </Pressable>
+  </Link>
+</View>
         </View>
 
         {/* Features Section */}

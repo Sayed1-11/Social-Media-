@@ -55,7 +55,7 @@ export default function ProfileScreen() {
   const [uploading, setUploading] = useState(false);
   const [uploadingType, setUploadingType] = useState<"profile" | "cover" | null>(null);
 
-  const API_BASE_URL = "http://localhost:3000";
+  const API_BASE_URL = "https://serverside-app.onrender.com";
 
   // Request permissions on component mount
   useEffect(() => {

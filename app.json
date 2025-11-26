@@ -4,7 +4,7 @@
     "slug": "SocialMedia",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/icon.jpeg",
     "scheme": "socialmedia",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -12,18 +12,18 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.sayed2023.SocialMedia",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos.",
+        "NSPhotoLibraryAddUsageDescription": "Allow $(PRODUCT_NAME) to save photos."
       }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/icon.jpeg",
+        "backgroundColor": "#E6F4FE"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.sayed2023.SocialMedia"
     },
     "web": {
       "bundler": "metro",
@@ -33,23 +33,26 @@
             "react-native-maps"
           ]
         },
-        "output": "static",
-        "favicon": "./assets/images/favicon.png"
+        "output": "static"
       },
       "plugins": [
         "expo-router",
         [
           "expo-splash-screen",
           {
-            "image": "./assets/images/splash-icon.png",
-            "imageWidth": 200,
-            "resizeMode": "contain",
             "backgroundColor": "#ffffff",
             "dark": {
               "backgroundColor": "#000000"
             }
           }
-        ]
+        ],
+              [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos.",
+          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save photos."
+        }
+      ]
       ],
       "experiments": {
         "typedRoutes": true,
@@ -62,7 +65,8 @@
       }
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      "expo-router"
     ]
   }
 }

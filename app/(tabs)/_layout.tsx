@@ -11,6 +11,9 @@ import {
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
 
+// Define proper types for Ionicons names
+type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
+
 interface FriendRequest {
   _id: string;
   requesterId: string;
@@ -67,7 +70,7 @@ export default function TabLayout() {
         "Content-Type": "application/json",
       };
 
-      const response = await fetch("http://localhost:3000/friends/requests", {
+      const response = await fetch("https://serverside-app.onrender.com/friends/requests", {
         method: "GET",
         headers,
       });
@@ -99,7 +102,7 @@ export default function TabLayout() {
           socketRef.current.disconnect();
         }
 
-        socketRef.current = io("http://localhost:3000", {
+        socketRef.current = io("https://serverside-app.onrender.com", {
           auth: { token },
           transports: ["websocket", "polling"],
         });
@@ -176,7 +179,7 @@ export default function TabLayout() {
 
         // Fetch unread notifications count
         const notificationsResponse = await fetch(
-          "http://localhost:3000/notifications/unread-count",
+          "https://serverside-app.onrender.com/notifications/unread-count",
           {
             method: "GET",
             headers,
@@ -227,11 +230,16 @@ export default function TabLayout() {
     focused: boolean;
   }) => (
     <View style={styles.iconContainer}>
-      <Ionicons
-        name={focused ? "notifications" : "notifications-outline"}
-        color={color}
-        size={24}
-      />
+      <View style={[
+        styles.iconWrapper,
+        focused && styles.activeIconWrapper
+      ]}>
+        <Ionicons
+          name={focused ? "notifications" : "notifications-outline"}
+          color={focused ? colors.primary : color}
+          size={26}
+        />
+      </View>
       {unreadCount > 0 && (
         <View
           style={[
@@ -257,11 +265,16 @@ export default function TabLayout() {
     focused: boolean;
   }) => (
     <View style={styles.iconContainer}>
-      <Ionicons
-        name={focused ? "people" : "people-outline"}
-        color={color}
-        size={24}
-      />
+      <View style={[
+        styles.iconWrapper,
+        focused && styles.activeIconWrapper
+      ]}>
+        <Ionicons
+          name={focused ? "people" : "people-outline"}
+          color={focused ? colors.primary : color}
+          size={26}
+        />
+      </View>
       {friendRequestsCount > 0 && (
         <View
           style={[
@@ -279,24 +292,129 @@ export default function TabLayout() {
     </View>
   );
 
+  // Custom Icon Component for other tabs with proper typing
+  const CustomTabIcon = ({ 
+    focused, 
+    inactiveName, 
+    activeName, 
+    color 
+  }: { 
+    focused: boolean; 
+    inactiveName: IoniconsName; 
+    activeName: IoniconsName; 
+    color: string;
+  }) => (
+    <View style={styles.iconContainer}>
+      <View style={[
+        styles.iconWrapper,
+        focused && styles.activeIconWrapper
+      ]}>
+        <Ionicons
+          name={focused ? activeName : inactiveName}
+          color={focused ? colors.primary : color}
+          size={26}
+        />
+      </View>
+    </View>
+  );
+
+  // Create Post Icon Component
+  const CreatePostIcon = ({ 
+    color, 
+    focused 
+  }: { 
+    color: string; 
+    focused: boolean;
+  }) => (
+    <View style={styles.iconContainer}>
+      <View style={[
+        styles.createIconWrapper,
+        focused && styles.activeCreateIconWrapper
+      ]}>
+        <Ionicons
+          name={focused ? "add" : "add-outline"}
+          color={focused ? "#fff" : colors.text}
+          size={28}
+        />
+      </View>
+    </View>
+  );
+
+  // Menu Icon Component
+  const MenuIcon = ({ 
+    color, 
+    focused 
+  }: { 
+    color: string; 
+    focused: boolean;
+  }) => (
+    <View style={styles.iconContainer}>
+      <View style={[
+        styles.iconWrapper,
+        focused && styles.activeIconWrapper
+      ]}>
+        <Ionicons
+          name={focused ? "menu" : "menu-outline"}
+          color={focused ? colors.primary : color}
+          size={26}
+        />
+      </View>
+    </View>
+  );
+
+  // Home Icon Component
+  const HomeIcon = ({ 
+    color, 
+    focused 
+  }: { 
+    color: string; 
+    focused: boolean;
+  }) => (
+    <View style={styles.iconContainer}>
+      <View style={[
+        styles.iconWrapper,
+        focused && styles.activeIconWrapper
+      ]}>
+        <Ionicons
+          name={focused ? "home" : "home-outline"}
+          color={focused ? colors.primary : color}
+          size={26}
+        />
+      </View>
+    </View>
+  );
+
   return (
     <>
       <Tabs
         screenOptions={{
-          tabBarActiveTintColor: colors.accent,
+          tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.textSecondary,
           headerShown: false,
-          tabBarShowLabel: true, // Show labels for clarity
+          tabBarShowLabel: true,
           tabBarStyle: {
-            height: 60,
-            backgroundColor: colors.background,
+            height: 70,
+            backgroundColor: colors.card,
             borderTopWidth: 1,
             borderTopColor: colors.border,
+            paddingBottom: 8,
+            paddingTop: 8,
+            shadowColor: "#000",
+            shadowOffset: {
+              width: 0,
+              height: -2,
+            },
+            shadowOpacity: 0.1,
+            shadowRadius: 8,
+            elevation: 8,
           },
           tabBarLabelStyle: {
             fontSize: 12,
-            fontWeight: '500',
+            fontWeight: '600',
             marginBottom: 4,
+          },
+          tabBarItemStyle: {
+            paddingVertical: 6,
           },
         }}
       >
@@ -305,13 +423,7 @@ export default function TabLayout() {
           options={{
             title: "Home",
             tabBarIcon: ({ color, focused }) => (
-              <View style={styles.iconContainer}>
-                <Ionicons
-                  name={focused ? "home" : "home-outline"}
-                  color={color}
-                  size={24}
-                />
-              </View>
+              <HomeIcon color={color} focused={focused} />
             ),
           }}
         />
@@ -331,13 +443,7 @@ export default function TabLayout() {
           options={{
             title: "Create",
             tabBarIcon: ({ color, focused }) => (
-              <View style={styles.iconContainer}>
-                <Ionicons
-                  name={focused ? "add-circle" : "add-circle-outline"}
-                  color={color}
-                  size={26}
-                />
-              </View>
+              <CreatePostIcon color={color} focused={focused} />
             ),
           }}
         />
@@ -345,7 +451,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="notifications"
           options={{
-            title: "Notify",
+            title: "Notifications",
             tabBarIcon: ({ color, focused }) => (
               <NotificationIconWithBadge color={color} focused={focused} />
             ),
@@ -355,15 +461,9 @@ export default function TabLayout() {
         <Tabs.Screen
           name="menu"
           options={{
-            title: "More",
+            title: "Menu",
             tabBarIcon: ({ color, focused }) => (
-              <View style={styles.iconContainer}>
-                <Ionicons
-                  name={focused ? "menu" : "menu-outline"}
-                  color={color}
-                  size={24}
-                />
-              </View>
+              <MenuIcon color={color} focused={focused} />
             ),
           }}
         />
@@ -401,6 +501,12 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
+          name="create-story"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
           name="chat/[id]"
           options={{
             href: null,
@@ -419,34 +525,74 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   iconContainer: {
-    padding: 8,
     position: "relative",
     alignItems: 'center',
     justifyContent: 'center',
+    width: 40,
+    height: 40,
+  },
+  iconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  activeIconWrapper: {
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+  },
+  createIconWrapper: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#007AFF',
+    shadowColor: '#007AFF',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  activeCreateIconWrapper: {
+    backgroundColor: '#0056CC',
+    transform: [{ scale: 1.05 }],
   },
   badge: {
     position: "absolute",
-    top: 4,
-    right: 4,
+    top: 2,
+    right: 2,
     backgroundColor: "#FF3B30",
     borderRadius: 10,
-    minWidth: 18,
-    height: 18,
+    minWidth: 20,
+    height: 20,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: "#FFFFFF",
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
   },
   friendsBadge: {
-    backgroundColor: "#007AFF", // Blue color for friend requests
+    backgroundColor: "#007AFF",
   },
   badgeLarge: {
-    minWidth: 22,
-    height: 18,
+    minWidth: 24,
+    height: 20,
   },
   badgeExtraLarge: {
-    minWidth: 26,
-    height: 18,
+    minWidth: 28,
+    height: 20,
   },
   badgeText: {
     color: "#FFFFFF",

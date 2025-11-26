@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = 'https://serverside-app.onrender.com';
 
 type User = {
   _id: string;
@@ -640,6 +640,7 @@ const createStyles = (colors: any, fontsLoaded: boolean) => StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 16,
+    marginTop:12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     backgroundColor: colors.surface,
